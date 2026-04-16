@@ -8,6 +8,7 @@ import { pageTools } from "./pages.js";
 import { calendarTools } from "./calendar.js";
 import { announcementTools } from "./announcements.js";
 import { discussionTools } from "./discussions.js";
+import { fileTools } from "./files.js";
 
 export const allTools: ToolDef[] = [
     ...courseTools,
@@ -19,6 +20,7 @@ export const allTools: ToolDef[] = [
     ...calendarTools,
     ...announcementTools,
     ...discussionTools,
-    // files, messages, notifications,
+    ...fileTools,
+    // messages, notifications,
     // profile, quizzes, rubrics — added per-domain in later tasks.
 ];
