@@ -65,20 +65,6 @@ export const assignmentTools: ToolDef[] = [
         },
     },
     {
-        name: "canvas_list_upcoming_assignments",
-        description:
-            "List upcoming assignments and calendar events due soon for the authenticated user, with optional result limit.",
-        inputSchema: z.object({
-            limit: z.number().int().positive().optional(),
-        }),
-        handler: async (args, { canvas }) => {
-            const events = await canvas.get("/api/v1/users/self/upcoming_events", {
-                ...(args.limit ? { per_page: args.limit } : {}),
-            });
-            return jsonResult(events);
-        },
-    },
-    {
         name: "canvas_list_missing_assignments",
         description:
             "List missing submissions for the authenticated student, with optional course and filter constraints.",
@@ -94,20 +80,6 @@ export const assignmentTools: ToolDef[] = [
                 ...(args.filter ? { filter: args.filter } : {}),
             });
             return jsonResult(missing);
-        },
-    },
-    {
-        name: "canvas_list_due_this_week",
-        description:
-            "List assignments and events due within the next 7 days by querying the upcoming_events endpoint.",
-        inputSchema: z.object({
-            days: z.number().int().positive().optional(),
-        }),
-        handler: async (args, { canvas }) => {
-            const events = await canvas.get("/api/v1/users/self/upcoming_events", {
-                ...(args.days ? { per_page: args.days * 10 } : {}),
-            });
-            return jsonResult(events);
         },
     },
 

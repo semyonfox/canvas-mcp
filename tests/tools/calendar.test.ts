@@ -51,14 +51,38 @@ describe("calendar tools", () => {
     });
 
     it("canvas_list_upcoming_events calls get for upcoming events", async () => {
-        const get = vi.fn().mockResolvedValue([{ id: 2, title: "Quiz due", workflow_state: "active" }]);
+        const get = vi.fn().mockResolvedValue([{ id: 2, title: "Quiz due", type: "assignment" }]);
         const tool = findTool("canvas_list_upcoming_events");
         const result = await tool.handler(
             {},
             { canvas: fakeCanvas({ get }) },
         );
-        expect(get).toHaveBeenCalledWith("/api/v1/users/self/upcoming_events", {});
+        expect(get).toHaveBeenCalledWith("/api/v1/users/self/upcoming_events");
         expect(result.content[0].text).toContain("Quiz due");
+    });
+
+    it("canvas_list_upcoming_events filters by type client-side", async () => {
+        const get = vi.fn().mockResolvedValue([
+            { id: 1, title: "Quiz", type: "assignment" },
+            { id: 2, title: "Office hours", type: "event" },
+        ]);
+        const tool = findTool("canvas_list_upcoming_events");
+        const result = await tool.handler({ type: "event" }, { canvas: fakeCanvas({ get }) });
+        const parsed = JSON.parse(result.content[0].text) as Array<{ type: string }>;
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].type).toBe("event");
+    });
+
+    it("canvas_list_upcoming_events applies limit after filtering", async () => {
+        const get = vi.fn().mockResolvedValue([
+            { id: 1, type: "assignment" },
+            { id: 2, type: "assignment" },
+            { id: 3, type: "assignment" },
+        ]);
+        const tool = findTool("canvas_list_upcoming_events");
+        const result = await tool.handler({ limit: 2 }, { canvas: fakeCanvas({ get }) });
+        const parsed = JSON.parse(result.content[0].text) as unknown[];
+        expect(parsed).toHaveLength(2);
     });
 
     it("canvas_list_planner_items calls collectPaginated", async () => {

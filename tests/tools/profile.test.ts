@@ -35,33 +35,6 @@ describe("profile tools", () => {
         expect(result.content[0].text).toContain("Other Student");
     });
 
-    it("canvas_list_my_courses_brief calls collectPaginated", async () => {
-        const collect = vi.fn().mockResolvedValue([{ id: 1, name: "CS101" }]);
-        const tool = findTool("canvas_list_my_courses_brief");
-        const result = await tool.handler(
-            {},
-            { canvas: fakeCanvas({ collectPaginated: collect }) },
-        );
-        expect(collect).toHaveBeenCalledWith(
-            "/api/v1/users/self/courses",
-            expect.objectContaining({ per_page: 100 }),
-        );
-        expect(result.content[0].text).toContain("CS101");
-    });
-
-    it("canvas_list_my_courses_brief passes enrollment_state filter", async () => {
-        const collect = vi.fn().mockResolvedValue([]);
-        const tool = findTool("canvas_list_my_courses_brief");
-        await tool.handler(
-            { enrollment_state: "active" },
-            { canvas: fakeCanvas({ collectPaginated: collect }) },
-        );
-        expect(collect).toHaveBeenCalledWith(
-            "/api/v1/users/self/courses",
-            expect.objectContaining({ enrollment_state: "active" }),
-        );
-    });
-
     it("canvas_get_my_settings calls get for settings endpoint", async () => {
         const get = vi.fn().mockResolvedValue({ manual_mark_as_read: false, collapse_global_nav: true });
         const tool = findTool("canvas_get_my_settings");

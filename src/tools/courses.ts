@@ -6,7 +6,7 @@ export const courseTools: ToolDef[] = [
     {
         name: "canvas_list_courses",
         description:
-            "List courses for the authenticated user. Use enrollment_state to filter (active/completed/invited).",
+            "List the authenticated user's courses. Canonical endpoint for 'my courses' / 'my classes'. Filter by enrollment_state (active|invited_or_pending|completed). Use include to pull extras like term, teachers, total_students, or current_grading_period_scores.",
         inputSchema: z.object({
             enrollment_state: z.enum(["active", "invited_or_pending", "completed"]).optional(),
             include: z.array(z.string()).optional(),

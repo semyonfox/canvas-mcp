@@ -55,20 +55,6 @@ describe("assignment tools", () => {
         expect(result.content[0].text).toContain("Homework");
     });
 
-    it("canvas_list_upcoming_assignments calls get on upcoming_events", async () => {
-        const get = vi.fn().mockResolvedValue([{ id: 99, title: "Quiz due" }]);
-        const tool = findTool("canvas_list_upcoming_assignments");
-        const result = await tool.handler(
-            {},
-            { canvas: fakeCanvas({ get }) },
-        );
-        expect(get).toHaveBeenCalledWith(
-            "/api/v1/users/self/upcoming_events",
-            expect.any(Object),
-        );
-        expect(result.content[0].text).toContain("Quiz due");
-    });
-
     it("canvas_list_missing_assignments calls get on missing_submissions", async () => {
         const get = vi.fn().mockResolvedValue([{ id: 55, name: "Lab Report" }]);
         const tool = findTool("canvas_list_missing_assignments");
@@ -83,17 +69,4 @@ describe("assignment tools", () => {
         expect(result.content[0].text).toContain("Lab Report");
     });
 
-    it("canvas_list_due_this_week calls get on upcoming_events", async () => {
-        const get = vi.fn().mockResolvedValue([{ id: 77, title: "Project Draft" }]);
-        const tool = findTool("canvas_list_due_this_week");
-        const result = await tool.handler(
-            {},
-            { canvas: fakeCanvas({ get }) },
-        );
-        expect(get).toHaveBeenCalledWith(
-            "/api/v1/users/self/upcoming_events",
-            expect.any(Object),
-        );
-        expect(result.content[0].text).toContain("Project Draft");
-    });
 });

@@ -13,53 +13,35 @@ function fakeCanvas(overrides: Partial<CanvasClient>): CanvasClient {
 }
 
 describe("grade tools", () => {
-    it("canvas_get_my_course_grades calls collectPaginated with course_id filter", async () => {
+    it("canvas_get_my_grades calls collectPaginated with optional course_id + state filters", async () => {
         const collect = vi.fn().mockResolvedValue([
             { id: 10, course_id: 42, grades: { current_grade: "A", final_grade: "A" } },
         ]);
-        const tool = findTool("canvas_get_my_course_grades");
+        const tool = findTool("canvas_get_my_grades");
         const result = await tool.handler(
-            { course_id: 42 },
+            { course_id: 42, state: ["active"] },
             { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
         expect(collect).toHaveBeenCalledWith(
             "/api/v1/users/self/enrollments",
-            expect.objectContaining({ course_id: 42, per_page: 100 }),
+            expect.objectContaining({ course_id: 42, state: ["active"], per_page: 100 }),
         );
         expect(result.content[0].text).toContain("current_grade");
     });
 
-    it("canvas_get_all_my_grades calls collectPaginated with state filter", async () => {
+    it("canvas_get_my_grades applies client-side limit", async () => {
         const collect = vi.fn().mockResolvedValue([
-            { id: 1, course_id: 10, grades: { final_score: 88 } },
-            { id: 2, course_id: 20, grades: { final_score: 75 } },
+            { id: 1, course_id: 1, grades: { final_score: 1 } },
+            { id: 2, course_id: 2, grades: { final_score: 2 } },
+            { id: 3, course_id: 3, grades: { final_score: 3 } },
         ]);
-        const tool = findTool("canvas_get_all_my_grades");
+        const tool = findTool("canvas_get_my_grades");
         const result = await tool.handler(
-            { state: ["active"] },
+            { limit: 2 },
             { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
-        expect(collect).toHaveBeenCalledWith(
-            "/api/v1/users/self/enrollments",
-            expect.objectContaining({ state: ["active"], per_page: 100 }),
-        );
-        expect(result.content[0].text).toContain("final_score");
-    });
-
-    it("canvas_list_recent_grades calls collectPaginated for enrollments", async () => {
-        const collect = vi.fn().mockResolvedValue([
-            { id: 5, course_id: 99, grades: { current_score: 90 } },
-        ]);
-        const tool = findTool("canvas_list_recent_grades");
-        const result = await tool.handler(
-            {},
-            { canvas: fakeCanvas({ collectPaginated: collect }) },
-        );
-        expect(collect).toHaveBeenCalledWith(
-            "/api/v1/users/self/enrollments",
-            expect.objectContaining({ per_page: 100 }),
-        );
-        expect(result.content[0].text).toContain("current_score");
+        const parsed = JSON.parse(result.content[0].text) as unknown[];
+        expect(parsed).toHaveLength(2);
     });
 
     it("canvas_get_assignment_feedback hits the submission/self endpoint", async () => {

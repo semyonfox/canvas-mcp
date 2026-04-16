@@ -25,21 +25,6 @@ export const profileTools: ToolDef[] = [
         },
     },
     {
-        name: "canvas_list_my_courses_brief",
-        description:
-            "List courses for the authenticated user with lean fields. Suitable for profile and summary views. Use enrollment_state to filter.",
-        inputSchema: z.object({
-            enrollment_state: z.enum(["active", "invited_or_pending", "completed"]).optional(),
-        }),
-        handler: async (args, { canvas }) => {
-            const courses = await canvas.collectPaginated("/api/v1/users/self/courses", {
-                per_page: 100,
-                ...(args.enrollment_state ? { enrollment_state: args.enrollment_state } : {}),
-            });
-            return jsonResult(courses);
-        },
-    },
-    {
         name: "canvas_get_my_settings",
         description: "Get the settings for the authenticated user.",
         inputSchema: z.object({}),

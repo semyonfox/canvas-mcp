@@ -27,11 +27,33 @@ export const calendarTools: ToolDef[] = [
     {
         name: "canvas_list_upcoming_events",
         description:
-            "List upcoming events and assignments for the authenticated user (next ~14 days).",
-        inputSchema: z.object({}),
-        handler: async (_args, { canvas }) => {
-            const events = await canvas.get("/api/v1/users/self/upcoming_events", {});
-            return jsonResult(events);
+            "List the authenticated user's upcoming items (next ~14 days). Canvas returns assignments with due dates AND calendar events in one merged list. Optional client-side filters: type (assignment|event), days (truncate to next N days), limit (cap result count). Use this for 'what's due', 'what's coming up', 'this week' questions.",
+        inputSchema: z.object({
+            type: z.enum(["assignment", "event"]).optional(),
+            days: z.number().int().positive().optional(),
+            limit: z.number().int().positive().optional(),
+        }),
+        handler: async (args, { canvas }) => {
+            const events = await canvas.get<Array<Record<string, unknown>>>(
+                "/api/v1/users/self/upcoming_events",
+            );
+            let filtered = events;
+            if (args.type) {
+                filtered = filtered.filter((e) => e["type"] === args.type);
+            }
+            if (args.days !== undefined) {
+                const cutoff = Date.now() + args.days * 86_400_000;
+                filtered = filtered.filter((e) => {
+                    const when = (e["end_at"] ?? e["start_at"] ?? e["due_at"]) as string | undefined;
+                    if (!when) return true;
+                    const t = Date.parse(when);
+                    return Number.isNaN(t) ? true : t <= cutoff;
+                });
+            }
+            if (args.limit !== undefined) {
+                filtered = filtered.slice(0, args.limit);
+            }
+            return jsonResult(filtered);
         },
     },
     {

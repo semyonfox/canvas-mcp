@@ -4,51 +4,24 @@ import { jsonResult } from "./types.js";
 
 export const gradeTools: ToolDef[] = [
     {
-        name: "canvas_get_my_course_grades",
+        name: "canvas_get_my_grades",
         description:
-            "Get the authenticated student's grades for a specific course, returned as enrollment objects with computed/current/final grade fields.",
+            "Get the authenticated student's grades across courses. Returns enrollment objects that include current_score, final_score, current_grade, final_grade, and grading-period fields. Optional filters: course_id (single course), state (active|completed|invited — defaults to active+invited), limit (cap result count). Use this for any 'what are my grades' question.",
         inputSchema: z.object({
             course_id: z.number().int().positive().optional(),
-            state: z.array(z.string()).optional(),
-        }),
-        handler: async (args, { canvas }) => {
-            const enrollments = await canvas.collectPaginated("/api/v1/users/self/enrollments", {
-                per_page: 100,
-                ...(args.course_id ? { course_id: args.course_id } : {}),
-                ...(args.state ? { state: args.state } : {}),
-            });
-            return jsonResult(enrollments);
-        },
-    },
-    {
-        name: "canvas_get_all_my_grades",
-        description:
-            "Get grades aggregated across all enrollments for the authenticated student. Filter by enrollment state (active, completed, etc.).",
-        inputSchema: z.object({
-            state: z.array(z.string()).optional(),
-        }),
-        handler: async (args, { canvas }) => {
-            const enrollments = await canvas.collectPaginated("/api/v1/users/self/enrollments", {
-                per_page: 100,
-                ...(args.state ? { state: args.state } : {}),
-            });
-            return jsonResult(enrollments);
-        },
-    },
-    {
-        name: "canvas_list_recent_grades",
-        description:
-            "List recent grades for the authenticated student by fetching enrollment grade data, optionally filtered by limit and sorted by recency.",
-        inputSchema: z.object({
+            state: z.array(z.enum(["active", "invited", "completed", "inactive"])).optional(),
             limit: z.number().int().positive().optional(),
         }),
         handler: async (args, { canvas }) => {
-            const enrollments = await canvas.collectPaginated("/api/v1/users/self/enrollments", {
-                per_page: 100,
-            });
-            const result = args.limit
-                ? (enrollments as unknown[]).slice(0, args.limit)
-                : enrollments;
+            const enrollments = await canvas.collectPaginated<Record<string, unknown>>(
+                "/api/v1/users/self/enrollments",
+                {
+                    per_page: 100,
+                    ...(args.course_id ? { course_id: args.course_id } : {}),
+                    ...(args.state ? { state: args.state } : {}),
+                },
+            );
+            const result = args.limit !== undefined ? enrollments.slice(0, args.limit) : enrollments;
             return jsonResult(result);
         },
     },
