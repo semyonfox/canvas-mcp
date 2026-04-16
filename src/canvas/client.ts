@@ -1,4 +1,5 @@
 import { CanvasError } from "./errors.js";
+import { parseNextLink } from "./pagination.js";
 
 export type FetchLike = typeof fetch;
 
@@ -29,6 +30,36 @@ export class CanvasClient {
 
     async getRaw(path: string, query?: Query): Promise<Response> {
         return this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
+    }
+
+    async *getPaginated<T>(path: string, query?: Query): AsyncIterable<T[]> {
+        let res = await this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
+        while (true) {
+            const batch = (await res.json()) as T[];
+            yield batch;
+            const next = parseNextLink(res.headers.get("link"));
+            if (!next) return;
+            res = await this.requestAbsolute(next);
+        }
+    }
+
+    async collectPaginated<T>(path: string, query?: Query): Promise<T[]> {
+        const all: T[] = [];
+        for await (const batch of this.getPaginated<T>(path, query)) all.push(...batch);
+        return all;
+    }
+
+    private async requestAbsolute(url: string): Promise<Response> {
+        const headers = new Headers({ authorization: `Bearer ${this.token}`, accept: "application/json" });
+        let res = await this.fetchImpl(url, { method: "GET", headers });
+        if (res.status >= 500) {
+            await new Promise((r) => setTimeout(r, 200));
+            res = await this.fetchImpl(url, { method: "GET", headers });
+        }
+        if (!res.ok) {
+            throw new CanvasError(res.status, `Canvas pagination fetch failed: ${res.statusText}`);
+        }
+        return res;
     }
 
     private async request(path: string, opts: { method: string; query?: Query; body?: unknown }): Promise<Response> {
