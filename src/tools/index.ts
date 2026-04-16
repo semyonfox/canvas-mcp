@@ -11,6 +11,7 @@ import { discussionTools } from "./discussions.js";
 import { fileTools } from "./files.js";
 import { messageTools } from "./messages.js";
 import { notificationTools } from "./notifications.js";
+import { profileTools } from "./profile.js";
 
 export const allTools: ToolDef[] = [
     ...courseTools,
@@ -25,5 +26,6 @@ export const allTools: ToolDef[] = [
     ...fileTools,
     ...messageTools,
     ...notificationTools,
-    // profile, quizzes, rubrics — added per-domain in later tasks.
+    ...profileTools,
+    // quizzes, rubrics — added per-domain in later tasks.
 ];
