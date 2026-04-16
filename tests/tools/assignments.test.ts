@@ -69,4 +69,88 @@ describe("assignment tools", () => {
         expect(result.content[0].text).toContain("Lab Report");
     });
 
+    it("canvas_create_assignment posts to assignments endpoint", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 99, name: "New Essay" });
+        const tool = findTool("canvas_create_assignment");
+        const result = await tool.handler(
+            { course_id: 5, name: "New Essay", points_possible: 100 },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/5/assignments",
+            expect.objectContaining({ assignment: expect.objectContaining({ name: "New Essay", points_possible: 100 }) }),
+        );
+        expect(result.content[0].text).toContain("New Essay");
+    });
+
+    it("canvas_update_assignment puts to single assignment endpoint", async () => {
+        const put = vi.fn().mockResolvedValue({ id: 20, name: "Updated Midterm" });
+        const tool = findTool("canvas_update_assignment");
+        const result = await tool.handler(
+            { course_id: 5, assignment_id: 20, name: "Updated Midterm" },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith(
+            "/api/v1/courses/5/assignments/20",
+            expect.objectContaining({ assignment: expect.objectContaining({ name: "Updated Midterm" }) }),
+        );
+        expect(result.content[0].text).toContain("Updated Midterm");
+    });
+
+    it("canvas_delete_assignment deletes from assignment endpoint", async () => {
+        const del = vi.fn().mockResolvedValue({ id: 20, workflow_state: "deleted" });
+        const tool = findTool("canvas_delete_assignment");
+        const result = await tool.handler(
+            { course_id: 5, assignment_id: 20 },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith(
+            "/api/v1/courses/5/assignments/20",
+        );
+        expect(result.content[0].text).toContain("deleted");
+    });
+
+    it("canvas_create_assignment_group posts to assignment_groups endpoint", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 7, name: "Projects" });
+        const tool = findTool("canvas_create_assignment_group");
+        const result = await tool.handler(
+            { course_id: 5, name: "Projects", group_weight: 40 },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/5/assignment_groups",
+            expect.objectContaining({ name: "Projects", group_weight: 40 }),
+        );
+        expect(result.content[0].text).toContain("Projects");
+    });
+
+    it("canvas_bulk_update_assignment_dates puts to bulk_update endpoint", async () => {
+        const put = vi.fn().mockResolvedValue({ progress: "queued" });
+        const tool = findTool("canvas_bulk_update_assignment_dates");
+        const dates = [{ id: 10, due_at: "2026-05-01T12:00:00Z" }];
+        const result = await tool.handler(
+            { course_id: 5, assignment_dates: dates },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith(
+            "/api/v1/courses/5/assignments/bulk_update",
+            dates,
+        );
+        expect(result.content[0].text).toContain("queued");
+    });
+
+    it("canvas_assign_peer_review posts to peer_reviews endpoint", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 42, workflow_state: "assigned" });
+        const tool = findTool("canvas_assign_peer_review");
+        const result = await tool.handler(
+            { course_id: 5, assignment_id: 20, reviewer_id: 101, reviewee_id: 102 },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/5/assignments/20/peer_reviews",
+            expect.objectContaining({ user_id: 101, reviewee_id: 102 }),
+        );
+        expect(result.content[0].text).toContain("assigned");
+    });
+
 });

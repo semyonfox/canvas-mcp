@@ -88,7 +88,6 @@ export const assignmentTools: ToolDef[] = [
     // Uncomment to enable assignment creation, updates, deletion,
     // bulk date changes, and peer review assignment.
     // ============================================================
-    /*
     {
         name: "canvas_create_assignment",
         description: "Create a new assignment in a course. Requires educator permissions.",
@@ -211,5 +210,4 @@ export const assignmentTools: ToolDef[] = [
             return jsonResult(review);
         },
     },
-    */
 ];
