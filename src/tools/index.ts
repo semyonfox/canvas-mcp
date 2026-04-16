@@ -4,6 +4,7 @@ import { assignmentTools } from "./assignments.js";
 import { submissionTools } from "./submissions.js";
 import { gradeTools } from "./grades.js";
 import { moduleTools } from "./modules.js";
+import { pageTools } from "./pages.js";
 
 export const allTools: ToolDef[] = [
     ...courseTools,
@@ -11,6 +12,7 @@ export const allTools: ToolDef[] = [
     ...submissionTools,
     ...gradeTools,
     ...moduleTools,
-    // pages, calendar, announcements, discussions, files, messages, notifications,
+    ...pageTools,
+    // calendar, announcements, discussions, files, messages, notifications,
     // profile, quizzes, rubrics — added per-domain in later tasks.
 ];
