@@ -136,7 +136,6 @@ export const moduleTools: ToolDef[] = [
     // Uncomment to enable module creation, updates, deletion,
     // item management, and publish toggling.
     // ============================================================
-    /*
     {
         name: "canvas_create_module",
         description: "Create a new module in a course. Requires educator permissions.",
@@ -153,7 +152,7 @@ export const moduleTools: ToolDef[] = [
                     module: {
                         name: args.name,
                         ...(args.position !== undefined ? { position: args.position } : {}),
-                        ...(args.unlock_at ? { unlock_at: args.unlock_at } : {}),
+                        ...(args.unlock_at !== undefined ? { unlock_at: args.unlock_at } : {}),
                     },
                 },
             );
@@ -175,7 +174,7 @@ export const moduleTools: ToolDef[] = [
                 `/api/v1/courses/${args.course_id}/modules/${args.module_id}`,
                 {
                     module: {
-                        ...(args.name ? { name: args.name } : {}),
+                        ...(args.name !== undefined ? { name: args.name } : {}),
                         ...(args.position !== undefined ? { position: args.position } : {}),
                         ...(args.published !== undefined ? { published: args.published } : {}),
                     },
@@ -216,7 +215,7 @@ export const moduleTools: ToolDef[] = [
                     module_item: {
                         type: args.type,
                         ...(args.content_id !== undefined ? { content_id: args.content_id } : {}),
-                        ...(args.title ? { title: args.title } : {}),
+                        ...(args.title !== undefined ? { title: args.title } : {}),
                         ...(args.position !== undefined ? { position: args.position } : {}),
                     },
                 },
@@ -240,7 +239,7 @@ export const moduleTools: ToolDef[] = [
                 `/api/v1/courses/${args.course_id}/modules/${args.module_id}/items/${args.item_id}`,
                 {
                     module_item: {
-                        ...(args.title ? { title: args.title } : {}),
+                        ...(args.title !== undefined ? { title: args.title } : {}),
                         ...(args.position !== undefined ? { position: args.position } : {}),
                         ...(args.published !== undefined ? { published: args.published } : {}),
                     },
@@ -280,5 +279,4 @@ export const moduleTools: ToolDef[] = [
             return jsonResult(module_);
         },
     },
-    */
 ];
