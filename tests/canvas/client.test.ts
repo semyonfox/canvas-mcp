@@ -62,3 +62,18 @@ describe("CanvasClient.get", () => {
         expect(fetch).toHaveBeenCalledTimes(1);
     });
 });
+
+describe("CanvasClient.post", () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it("sends POST with JSON body and returns parsed response", async () => {
+        const fetch = mockFetch([{ status: 200, body: { marked: true } }]);
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+        const result = await client.post<{ marked: boolean }>("/api/v1/courses/1/modules/2/items/3/mark_read");
+        expect(result).toEqual({ marked: true });
+        const [url, init] = fetch.mock.calls[0];
+        expect(url).toBe("https://x.instructure.com/api/v1/courses/1/modules/2/items/3/mark_read");
+        expect(init.method).toBe("POST");
+        expect((init.headers as Headers).get("authorization")).toBe("Bearer tok");
+    });
+});
