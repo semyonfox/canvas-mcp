@@ -74,7 +74,6 @@ export const quizTools: ToolDef[] = [
     // Uncomment to enable quiz authoring, question management,
     // question groups, and starting quiz attempts.
     // ============================================================
-    /*
     {
         name: "canvas_create_quiz",
         description: "Create a quiz in a course. Requires educator permissions.",
@@ -91,7 +90,7 @@ export const quizTools: ToolDef[] = [
             const quiz = await canvas.post(`/api/v1/courses/${course_id}/quizzes`, {
                 quiz: {
                     title: fields.title,
-                    ...(fields.quiz_type ? { quiz_type: fields.quiz_type } : {}),
+                    ...(fields.quiz_type !== undefined ? { quiz_type: fields.quiz_type } : {}),
                     ...(fields.time_limit !== undefined ? { time_limit: fields.time_limit } : {}),
                     ...(fields.allowed_attempts !== undefined ? { allowed_attempts: fields.allowed_attempts } : {}),
                     ...(fields.published !== undefined ? { published: fields.published } : {}),
@@ -118,8 +117,8 @@ export const quizTools: ToolDef[] = [
                 `/api/v1/courses/${course_id}/quizzes/${quiz_id}`,
                 {
                     quiz: {
-                        ...(fields.title ? { title: fields.title } : {}),
-                        ...(fields.quiz_type ? { quiz_type: fields.quiz_type } : {}),
+                        ...(fields.title !== undefined ? { title: fields.title } : {}),
+                        ...(fields.quiz_type !== undefined ? { quiz_type: fields.quiz_type } : {}),
                         ...(fields.time_limit !== undefined ? { time_limit: fields.time_limit } : {}),
                         ...(fields.allowed_attempts !== undefined ? { allowed_attempts: fields.allowed_attempts } : {}),
                         ...(fields.published !== undefined ? { published: fields.published } : {}),
@@ -170,10 +169,17 @@ export const quizTools: ToolDef[] = [
             points_possible: z.number().optional(),
         }),
         handler: async (args, { canvas }) => {
-            const { course_id, quiz_id, ...fields } = args;
+            const { course_id, quiz_id, question_name, question_text, question_type, points_possible } = args;
             const question = await canvas.post(
                 `/api/v1/courses/${course_id}/quizzes/${quiz_id}/questions`,
-                { question: fields },
+                {
+                    question: {
+                        question_text,
+                        question_type,
+                        ...(question_name !== undefined ? { question_name } : {}),
+                        ...(points_possible !== undefined ? { points_possible } : {}),
+                    },
+                },
             );
             return jsonResult(question);
         },
@@ -190,10 +196,16 @@ export const quizTools: ToolDef[] = [
             points_possible: z.number().optional(),
         }),
         handler: async (args, { canvas }) => {
-            const { course_id, quiz_id, question_id, ...fields } = args;
+            const { course_id, quiz_id, question_id, question_name, question_text, points_possible } = args;
             const question = await canvas.put(
                 `/api/v1/courses/${course_id}/quizzes/${quiz_id}/questions/${question_id}`,
-                { question: fields },
+                {
+                    question: {
+                        ...(question_name !== undefined ? { question_name } : {}),
+                        ...(question_text !== undefined ? { question_text } : {}),
+                        ...(points_possible !== undefined ? { points_possible } : {}),
+                    },
+                },
             );
             return jsonResult(question);
         },
@@ -242,5 +254,4 @@ export const quizTools: ToolDef[] = [
             return jsonResult(submission);
         },
     },
-    */
 ];
