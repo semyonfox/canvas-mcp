@@ -95,4 +95,60 @@ describe("page tools", () => {
         );
         expect(result.content[0].text).toContain("Week 1 v2");
     });
+
+    it("canvas_create_page posts a new page with title and optional fields", async () => {
+        const post = vi.fn().mockResolvedValue({ url: "new-page", title: "New Page", published: true });
+        const tool = findTool("canvas_create_page");
+        const result = await tool.handler(
+            { course_id: 10, title: "New Page", body: "<p>content</p>", published: true },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/pages",
+            expect.objectContaining({
+                wiki_page: expect.objectContaining({ title: "New Page", body: "<p>content</p>", published: true }),
+            }),
+        );
+        expect(result.content[0].text).toContain("New Page");
+    });
+
+    it("canvas_update_page puts updated fields for an existing page", async () => {
+        const put = vi.fn().mockResolvedValue({ url: "week-1", title: "Week 1 Updated", published: false });
+        const tool = findTool("canvas_update_page");
+        const result = await tool.handler(
+            { course_id: 10, page_url: "week-1", title: "Week 1 Updated", published: false },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith(
+            "/api/v1/courses/10/pages/week-1",
+            expect.objectContaining({
+                wiki_page: expect.objectContaining({ title: "Week 1 Updated", published: false }),
+            }),
+        );
+        expect(result.content[0].text).toContain("Week 1 Updated");
+    });
+
+    it("canvas_delete_page deletes a page by url slug", async () => {
+        const del = vi.fn().mockResolvedValue({ deleted: true });
+        const tool = findTool("canvas_delete_page");
+        const result = await tool.handler(
+            { course_id: 10, page_url: "week-1" },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith("/api/v1/courses/10/pages/week-1");
+        expect(result.content[0].text).toContain("deleted");
+    });
+
+    it("canvas_revert_page_revision posts to the revision endpoint", async () => {
+        const post = vi.fn().mockResolvedValue({ revision_id: 1, title: "Week 1 original" });
+        const tool = findTool("canvas_revert_page_revision");
+        const result = await tool.handler(
+            { course_id: 10, page_url: "week-1", revision_id: 1 },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/pages/week-1/revisions/1",
+        );
+        expect(result.content[0].text).toContain("revision_id");
+    });
 });

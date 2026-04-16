@@ -97,7 +97,6 @@ export const pageTools: ToolDef[] = [
     // Uncomment to enable page creation, updates, deletion,
     // and revision reversion.
     // ============================================================
-    /*
     {
         name: "canvas_create_page",
         description: "Create a new page in a course. Requires educator permissions.",
@@ -114,7 +113,7 @@ export const pageTools: ToolDef[] = [
                 {
                     wiki_page: {
                         title: args.title,
-                        ...(args.body ? { body: args.body } : {}),
+                        ...(args.body !== undefined ? { body: args.body } : {}),
                         ...(args.published !== undefined ? { published: args.published } : {}),
                         ...(args.front_page !== undefined ? { front_page: args.front_page } : {}),
                     },
@@ -139,8 +138,8 @@ export const pageTools: ToolDef[] = [
                 `/api/v1/courses/${args.course_id}/pages/${args.page_url}`,
                 {
                     wiki_page: {
-                        ...(args.title ? { title: args.title } : {}),
-                        ...(args.body ? { body: args.body } : {}),
+                        ...(args.title !== undefined ? { title: args.title } : {}),
+                        ...(args.body !== undefined ? { body: args.body } : {}),
                         ...(args.published !== undefined ? { published: args.published } : {}),
                         ...(args.front_page !== undefined ? { front_page: args.front_page } : {}),
                     },
@@ -178,5 +177,4 @@ export const pageTools: ToolDef[] = [
             return jsonResult(revision);
         },
     },
-    */
 ];
