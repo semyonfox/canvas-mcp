@@ -65,7 +65,6 @@ export const gradeTools: ToolDef[] = [
     // Uncomment to enable grade submission, bulk status views,
     // and comprehensive grade + submission roll-ups.
     // ============================================================
-    /*
     {
         name: "canvas_submit_grade",
         description: "Grade a student's submission for an assignment. Requires educator permissions.",
@@ -131,5 +130,4 @@ export const gradeTools: ToolDef[] = [
             return jsonResult({ enrollments, submissions });
         },
     },
-    */
 ];
