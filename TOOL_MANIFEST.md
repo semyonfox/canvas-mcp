@@ -1,8 +1,8 @@
 # canvas-mcp tool manifest
 
-This is the locked tool list driving implementation of canvas-mcp. It was produced from a cross-reference sweep of 12 open-source Canvas MCP reference repos (see `ATTRIBUTION.md`). The active tables below define the student-facing surface that will ship in v1. Admin and educator tools are listed per-domain as well; those will be present in source but commented out, gated behind a future capability flag rather than deleted, so that the server can be flipped to educator/admin mode later without another merge pass.
+The full tool surface across 15 Canvas domains, produced from a cross-reference sweep of 12 open-source Canvas MCP reference repos (see `ATTRIBUTION.md`). Each domain has two sections: an **active** table listing tools registered by default (student-safe reads), and an **admin / educator** table listing instructor- and admin-level tools that are present in source but commented out. Uncomment the block in the relevant `src/tools/<domain>.ts` file to enable them — they're fully implemented, just not registered.
 
-All tool names are normalised to `canvas_<verb>_<noun>` in snake_case. Endpoints are Canvas LMS REST API paths (`/api/v1/...`). Where the Canvas API supports `include[]`, pagination (`per_page` / link headers), or `enrollment_state` filters, these are called out in the notes column. "Sources" lists 1-3 reference repos whose implementation most directly informed the tool design; it is not exhaustive.
+All tool names follow `canvas_<verb>_<noun>` in snake_case. Endpoints are Canvas LMS REST API paths (`/api/v1/...`). Where the Canvas API supports `include[]`, pagination, or `enrollment_state` filters, these are called out in the notes column. "Sources" lists 1-3 reference repos whose implementations most directly informed the tool design; it is not exhaustive.
 
 ---
 
