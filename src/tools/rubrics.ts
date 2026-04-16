@@ -83,7 +83,6 @@ export const rubricTools: ToolDef[] = [
     // Uncomment to enable rubric creation, updates, deletion,
     // association management, and rubric-based grading.
     // ============================================================
-    /*
     {
         name: "canvas_create_rubric",
         description: "Create a rubric in a course. Requires educator permissions.",
@@ -177,5 +176,4 @@ export const rubricTools: ToolDef[] = [
             return jsonResult(result);
         },
     },
-    */
 ];

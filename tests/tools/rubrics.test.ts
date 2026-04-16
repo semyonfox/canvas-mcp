@@ -104,4 +104,91 @@ describe("rubric tools", () => {
         );
         expect(result.content[0].text).toContain("rubric_assessment");
     });
+
+    it("canvas_create_rubric posts rubric fields to the course endpoint", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 5, title: "New Rubric" });
+        const tool = findTool("canvas_create_rubric");
+        const result = await tool.handler(
+            {
+                course_id: 10,
+                title: "New Rubric",
+                criteria: [{ description: "Grammar", points: 10 }],
+            },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/rubrics",
+            expect.objectContaining({ rubric: expect.objectContaining({ title: "New Rubric" }) }),
+        );
+        expect(result.content[0].text).toContain("New Rubric");
+    });
+
+    it("canvas_update_rubric puts updated fields to the rubric endpoint", async () => {
+        const put = vi.fn().mockResolvedValue({ id: 5, title: "Renamed Rubric" });
+        const tool = findTool("canvas_update_rubric");
+        const result = await tool.handler(
+            { course_id: 10, rubric_id: 5, title: "Renamed Rubric" },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith(
+            "/api/v1/courses/10/rubrics/5",
+            expect.objectContaining({ rubric: expect.objectContaining({ title: "Renamed Rubric" }) }),
+        );
+        expect(result.content[0].text).toContain("Renamed Rubric");
+    });
+
+    it("canvas_delete_rubric calls delete on the rubric endpoint", async () => {
+        const del = vi.fn().mockResolvedValue({ id: 5 });
+        const tool = findTool("canvas_delete_rubric");
+        const result = await tool.handler(
+            { course_id: 10, rubric_id: 5 },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith("/api/v1/courses/10/rubrics/5");
+        expect(result.content[0].text).toContain("5");
+    });
+
+    it("canvas_associate_rubric posts association fields to rubric_associations", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 20, rubric_id: 5, association_type: "Assignment" });
+        const tool = findTool("canvas_associate_rubric");
+        const result = await tool.handler(
+            {
+                course_id: 10,
+                rubric_id: 5,
+                association_id: 7,
+                association_type: "Assignment",
+                purpose: "grading",
+            },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/rubric_associations",
+            expect.objectContaining({
+                rubric_association: expect.objectContaining({
+                    rubric_id: 5,
+                    association_id: 7,
+                    association_type: "Assignment",
+                }),
+            }),
+        );
+        expect(result.content[0].text).toContain("Assignment");
+    });
+
+    it("canvas_grade_with_rubric puts rubric_assessment to the submission endpoint", async () => {
+        const put = vi.fn().mockResolvedValue({ id: 99, score: 18 });
+        const tool = findTool("canvas_grade_with_rubric");
+        const rubric_assessment = {
+            criterion_1: { points: 10, comments: "Good" },
+            criterion_2: { points: 8 },
+        };
+        const result = await tool.handler(
+            { course_id: 10, assignment_id: 7, user_id: 42, rubric_assessment },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith(
+            "/api/v1/courses/10/assignments/7/submissions/42",
+            expect.objectContaining({ rubric_assessment }),
+        );
+        expect(result.content[0].text).toContain("score");
+    });
 });
