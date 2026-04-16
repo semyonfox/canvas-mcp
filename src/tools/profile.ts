@@ -38,7 +38,6 @@ export const profileTools: ToolDef[] = [
     // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
     // Uncomment to enable profile updates and user creation.
     // ============================================================
-    /*
     {
         name: "canvas_update_user_profile",
         description: "Update a user's profile. Requires educator permissions.",
@@ -83,5 +82,4 @@ export const profileTools: ToolDef[] = [
             return jsonResult(result);
         },
     },
-    */
 ];
