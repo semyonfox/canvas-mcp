@@ -156,6 +156,30 @@ issue — I'd rather collapse than proliferate.
 All of the above are reasonable future additions; none are blocking for
 the current use cases.
 
+## Disclaimer
+
+This server exposes Canvas LMS to a language model. Any MCP client connected
+to it can call any of the 129 registered tools, and most of those tools can
+create, modify, or delete real data in a real Canvas account. The AI on the
+other end will do whatever its prompting steers it to do; there is no
+confirmation step between "model decides to call a tool" and "the call
+happens." Canvas logs every API call but does not undo them.
+
+If you hand this server an instructor token, an AI assistant can post
+announcements, grade submissions, and delete assignments on your behalf. If
+you hand it an admin token, the blast radius is the entire institution
+account the token can reach. Scope the token down to the least privilege
+that does the job, trim tools you don't need before building, and don't
+point an open-ended chat agent at a privileged token without understanding
+the consequences.
+
+This is provided as-is under the MIT licence. It's not affiliated with or
+endorsed by Instructure. I make no warranty that it's safe, correct, or fit
+for any purpose, and accept no liability for anything that happens when you
+or an AI running through this server interact with Canvas. You are
+responsible for how you deploy it, what token you give it, and what any
+connected model does with that access.
+
 ## License
 
 MIT. See `LICENSE`.
