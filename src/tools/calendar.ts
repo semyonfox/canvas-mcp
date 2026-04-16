@@ -91,7 +91,6 @@ export const calendarTools: ToolDef[] = [
     // Uncomment to enable calendar event creation, updates, deletion,
     // planner note management, and planner override marking.
     // ============================================================
-    /*
     {
         name: "canvas_create_calendar_event",
         description: "Create a calendar event. Requires educator permissions.",
@@ -213,5 +212,4 @@ export const calendarTools: ToolDef[] = [
             return jsonResult(result);
         },
     },
-    */
 ];
