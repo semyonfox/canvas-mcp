@@ -42,4 +42,29 @@ describe("course tools", () => {
         expect(collect).toHaveBeenCalledWith("/api/v1/courses/42/sections", expect.any(Object));
         expect(result.content[0].text).toContain("Section A");
     });
+
+    it("canvas_create_course posts to account endpoint with course body", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 99, name: "New Course", course_code: "NC101" });
+        const tool = findTool("canvas_create_course");
+        const result = await tool.handler(
+            { account_id: 1, name: "New Course", course_code: "NC101" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/accounts/1/courses",
+            expect.objectContaining({ course: expect.objectContaining({ name: "New Course", course_code: "NC101" }) }),
+        );
+        expect(result.content[0].text).toContain("New Course");
+    });
+
+    it("canvas_create_course omits course_code when not provided", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 100, name: "No Code Course" });
+        const tool = findTool("canvas_create_course");
+        await tool.handler(
+            { account_id: 1, name: "No Code Course" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        const body = post.mock.calls[0]?.[1] as { course: Record<string, unknown> };
+        expect(body.course).not.toHaveProperty("course_code");
+    });
 });

@@ -52,7 +52,6 @@ export const courseTools: ToolDef[] = [
     // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
     // Uncomment to enable course creation, updates, and deletion.
     // ============================================================
-    /*
     {
         name: "canvas_create_course",
         description: "Create a new course in an account. Requires admin permissions.",
@@ -63,10 +62,12 @@ export const courseTools: ToolDef[] = [
         }),
         handler: async (args, { canvas }) => {
             const course = await canvas.post(`/api/v1/accounts/${args.account_id}/courses`, {
-                course: { name: args.name, course_code: args.course_code },
+                course: {
+                    name: args.name,
+                    ...(args.course_code !== undefined ? { course_code: args.course_code } : {}),
+                },
             });
             return jsonResult(course);
         },
     },
-    */
 ];
