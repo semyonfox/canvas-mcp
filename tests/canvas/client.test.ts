@@ -77,3 +77,17 @@ describe("CanvasClient.post", () => {
         expect((init.headers as Headers).get("authorization")).toBe("Bearer tok");
     });
 });
+
+describe("CanvasClient.delete", () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it("sends DELETE and returns parsed response", async () => {
+        const fetch = mockFetch([{ status: 200, body: { id: 1, deleted: true } }]);
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+        const result = await client.delete<{ id: number; deleted: boolean }>("/api/v1/courses/1");
+        expect(result).toEqual({ id: 1, deleted: true });
+        const [url, init] = fetch.mock.calls[0];
+        expect(url).toBe("https://x.instructure.com/api/v1/courses/1");
+        expect(init.method).toBe("DELETE");
+    });
+});

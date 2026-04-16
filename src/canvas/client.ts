@@ -38,6 +38,11 @@ export class CanvasClient {
         return (await res.json()) as T;
     }
 
+    async delete<T>(path: string, body?: unknown): Promise<T> {
+        const res = await this.request(path, { method: "DELETE", ...(body !== undefined ? { body } : {}) });
+        return (await res.json()) as T;
+    }
+
     async getRaw(path: string, query?: Query): Promise<Response> {
         return this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
     }
