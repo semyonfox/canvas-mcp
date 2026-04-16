@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ToolDef } from "./types.js";
-import { jsonResult } from "./types.js";
+import { jsonResult, textResult } from "./types.js";
 
 export const submissionTools: ToolDef[] = [
     {
@@ -105,10 +105,19 @@ export const submissionTools: ToolDef[] = [
     // Uncomment to enable submission grading, comment posting,
     // bulk grading, student submission on behalf, and section views.
     // ============================================================
-    /*
     {
         name: "canvas_submit_assignment",
-        description: "Submit an assignment on behalf of a student. Requires admin permissions.",
+        // STUB: online_upload and media_recording require multi-step Canvas API flows.
+        // online_upload: (1) request upload token POST /api/v1/courses/:id/assignments/:id/submissions/self/files,
+        //   (2) upload file bytes to the returned upload_url, (3) confirm upload, (4) POST submission with file_ids[].
+        // media_recording: (1) obtain a Kaltura upload token via GET /api/v1/services/kaltura_session,
+        //   (2) upload media to Kaltura, (3) POST submission with media_comment_id and media_comment_type.
+        // online_text_entry and online_url are handled directly by this tool.
+        // For file/media types, call the appropriate Canvas file-upload or Kaltura APIs manually, then submit.
+        description:
+            "Submit an assignment. Supports online_text_entry and online_url directly. " +
+            "online_upload and media_recording require multi-step flows (see stub message returned by those types). " +
+            "Requires appropriate permissions.",
         inputSchema: z.object({
             course_id: z.number().int().positive(),
             assignment_id: z.number().int().positive(),
@@ -117,13 +126,37 @@ export const submissionTools: ToolDef[] = [
             url: z.string().optional(),
         }),
         handler: async (args, { canvas }) => {
+            if (args.submission_type === "online_upload") {
+                return textResult(
+                    "online_upload submissions require a multi-step flow: " +
+                    "(1) POST /api/v1/courses/:course_id/assignments/:assignment_id/submissions/self/files " +
+                    "to request an upload token (provide name and size), " +
+                    "(2) upload the file bytes to the returned upload_url, " +
+                    "(3) confirm the upload to get a file_id, " +
+                    "(4) POST /api/v1/courses/:course_id/assignments/:assignment_id/submissions " +
+                    "with submission[submission_type]=online_upload and submission[file_ids][]=[file_id]. " +
+                    "This tool does not implement file upload — use the Canvas Files API directly.",
+                );
+            }
+            if (args.submission_type === "media_recording") {
+                return textResult(
+                    "media_recording submissions require a multi-step flow: " +
+                    "(1) GET /api/v1/services/kaltura_session to obtain a Kaltura upload token, " +
+                    "(2) upload the media to the Kaltura endpoint using the session token, " +
+                    "(3) POST /api/v1/courses/:course_id/assignments/:assignment_id/submissions " +
+                    "with submission[submission_type]=media_recording, " +
+                    "submission[media_comment_id]=<kaltura_entry_id>, and " +
+                    "submission[media_comment_type]=video|audio. " +
+                    "This tool does not implement Kaltura media upload — use the Kaltura API directly.",
+                );
+            }
             const result = await canvas.post(
                 `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions`,
                 {
                     submission: {
                         submission_type: args.submission_type,
-                        ...(args.body ? { body: args.body } : {}),
-                        ...(args.url ? { url: args.url } : {}),
+                        ...(args.body !== undefined ? { body: args.body } : {}),
+                        ...(args.url !== undefined ? { url: args.url } : {}),
                     },
                 },
             );
@@ -210,5 +243,4 @@ export const submissionTools: ToolDef[] = [
             return jsonResult(submissions);
         },
     },
-    */
 ];
