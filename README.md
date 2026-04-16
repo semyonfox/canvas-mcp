@@ -1,30 +1,31 @@
 # canvas-mcp
 
-Unified TypeScript MCP server for Canvas LMS, exposing student-facing Canvas API tools over streamable-http.
+An MCP server for Canvas LMS, written in TypeScript. Gives any MCP-speaking
+client (Claude Desktop, an in-house agent, whatever you've wired up) read
+access to a student's Canvas account: courses, assignments, grades, modules,
+pages, discussions, calendar, inbox, the lot.
 
-## Why
+I wrote it while building [OghmaNotes](https://oghmanotes.ie) because the
+twelve existing open-source Canvas MCP servers were all half-overlapping,
+half-abandoned, and none of them were the one I wanted to bet on. This is the
+union of their good ideas, normalised, deduped, and shipped as a single
+maintainable server. `ATTRIBUTION.md` lists every repo I borrowed from — all
+MIT or ISC, full credit where it's due.
 
-This server merges the best tools from 12 open-source Canvas MCP servers (all MIT/ISC licensed) into a single, consistent implementation. The tool set is student-focused by default — admin and educator tools are present in source but commented out, so they can be enabled without another merge pass. It is consumed by [OghmaNotes](https://oghmanotes.ie) as an external MCP service, giving the AI chat agent full Canvas API coverage beyond the five built-in tools. It is also intended as a reference implementation the community can converge on.
+## What's in it
 
-## Tool surface
+63 active student-facing tools across 15 Canvas domains. Each tool is a thin
+wrapper over a Canvas REST endpoint with a zod-validated input schema. All the
+admin/educator tools (creating courses, grading submissions, posting
+announcements) are present in source but commented out — if you want to run
+this as an instructor tool, grep for `ADMIN / EDUCATOR` and uncomment the
+blocks you need. No feature flag, no env toggle; the fork point is a visible
+code change on purpose.
 
-68 active student-facing tools across 15 Canvas domains. Admin and educator tools are kept in source (commented out) for selective enablement — see below. See [`TOOL_MANIFEST.md`](./TOOL_MANIFEST.md) for the full per-tool list with endpoints and notes.
-
-- **courses** — list courses, get course details, syllabus, sections, enrollments, tabs, favorites, dashboard cards
-- **assignments** — list and get assignments, list assignment groups
-- **submissions** — get own submission status and details per assignment
-- **grades** — get course grades and enrollment grade summaries
-- **modules** — list modules and module items
-- **pages** — list pages, get page content, list page revisions
-- **calendar** — list calendar events with date and context filters
-- **announcements** — list announcements across courses
-- **discussions** — list discussion topics, get discussion entries/posts
-- **files** — list course files, get file metadata and download URL
-- **messages** — list inbox conversations, get conversation detail
-- **notifications** — list unread and recent notifications
-- **profile** — get own user profile and activity stream
-- **quizzes** — list quizzes, get quiz details (read-only)
-- **rubrics** — list rubrics for a course, get rubric detail
+Domains: courses, assignments, submissions, grades, modules, pages, calendar,
+announcements, discussions, files, messages, notifications, profile, quizzes,
+rubrics. `TOOL_MANIFEST.md` has the full per-tool list with endpoints, inputs,
+and sources.
 
 ## Setup
 
@@ -32,34 +33,31 @@ This server merges the best tools from 12 open-source Canvas MCP servers (all MI
 cp .env.example .env
 # fill in CANVAS_API_TOKEN and CANVAS_DOMAIN
 npm install
-npm run dev    # watch mode
+npm run dev     # watch mode
 # or
 npm run build && npm start
 ```
+
+Requires Node 22+.
 
 ## Environment
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `CANVAS_API_TOKEN` | yes | — | Canvas LMS user API token |
-| `CANVAS_DOMAIN` | yes | — | no scheme, e.g. `universityofgalway.instructure.com` |
-| `PORT` | no | `3001` | HTTP port the server listens on |
-| `LOG_LEVEL` | no | `info` | log verbosity (`debug`, `info`, `warn`, `error`) |
+| `CANVAS_API_TOKEN` | yes | — | Canvas user API token. Generate one under Account → Settings → Approved Integrations. |
+| `CANVAS_DOMAIN` | yes | — | Your institution's Canvas host, no scheme. e.g. `universityofgalway.instructure.com`. |
+| `PORT` | no | `3001` | HTTP port. |
+| `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error`. |
 
-## Docker
+## Transport
 
-```bash
-docker build -t canvas-mcp .
-docker run --rm -p 3001:3001 \
-  -e CANVAS_API_TOKEN=... \
-  -e CANVAS_DOMAIN=... \
-  canvas-mcp
-curl localhost:3001/health
-```
+Streamable-http, the current MCP transport standard. One code path for local
+dev and deployed prod — you hit the same HTTP server in both cases.
 
-## MCP client config
+`GET /health` returns `{"ok": true}` for load balancers.
 
-This server uses the streamable-http transport. Clients connect to `http://HOST:3001` locally or the deployed URL in production. Any MCP client that supports streamable-http URLs can connect — example config:
+MCP traffic is on the same port, at the root path, per the streamable-http
+spec. Typical client config:
 
 ```json
 {
@@ -72,20 +70,67 @@ This server uses the streamable-http transport. Clients connect to `http://HOST:
 }
 ```
 
+## Docker
+
+```bash
+docker build -t canvas-mcp .
+docker run --rm -p 3001:3001 \
+  -e CANVAS_API_TOKEN=... \
+  -e CANVAS_DOMAIN=... \
+  canvas-mcp
+```
+
+Two-stage build, distroless runtime, non-root. Image is small and has no
+shell.
+
 ## Deployment
 
-**AWS Fargate** — run the container as a long-lived service behind an ALB or direct ECS service discovery. Pass `CANVAS_API_TOKEN` via an ECS secret sourced from AWS Secrets Manager. Set the container port to `3001` and configure a health check against `/health`.
+On AWS I run it on Fargate as a long-lived service behind an ALB, token
+sourced from Secrets Manager via an ECS secret, container health check
+against `/health`. Lambda with a function URL works too if you wrap the
+handler with a streamable-http adapter and don't mind cold-start latency on
+the occasional call.
 
-**AWS Lambda with function URL** — use the streamable-http adapter to wrap the server for Lambda invocation. Enable a function URL with `AWS_IAM` or `NONE` auth. Retrieve the token from Secrets Manager in the Lambda init phase and set it as an environment variable. Cold-start latency is acceptable for infrequent MCP calls; keep the function warm if sub-second response is needed.
+Nothing about the server assumes AWS — it's just a node process listening on
+a port.
 
-## Enabling admin/educator tools
+## Tests
 
-Admin and educator tools are commented out in the relevant `src/tools/<domain>.ts` file. Each block is marked with a banner comment (`ADMIN / EDUCATOR TOOLS`) and wrapped in a `/* ... */` block comment. To enable a tool, uncomment the block in the appropriate file and rebuild. There is no feature flag — the fork-point is a visible code change.
+```bash
+npm test           # vitest, unit tests against a mocked fetch
+npm run typecheck  # strict TS, exactOptionalPropertyTypes
+```
 
-## Attribution
+There's also `scripts/verify-tools.mjs` — a live-fire verification driver that
+iterates over every active tool with real Canvas data. It discovers IDs as it
+goes (first course, first assignment, etc.), logs every call, and skips the
+three side-effect tools (`mark_module_item_read`, `mark_module_item_done`,
+`mark_conversation_read`) unless you edit the script. Useful after upgrading
+the SDK or pointing at a new institution:
 
-This server merges work from 12 open-source Canvas MCP servers, all MIT/ISC licensed — see [`ATTRIBUTION.md`](./ATTRIBUTION.md) for the full list and links.
+```bash
+CANVAS_API_TOKEN=... CANVAS_DOMAIN=... node scripts/verify-tools.mjs
+```
+
+## Scope
+
+Student-facing by default, read-heavy, no auth flow beyond a personal access
+token. This is not trying to be a full Canvas admin console. If a tool you
+want isn't in the active list, check the commented admin/educator blocks in
+`src/tools/<domain>.ts` — it's probably there, waiting to be uncommented.
+
+Things deliberately left out for v1: per-user OAuth, response caching, MCP
+prompts/resources (only tools are exposed), CLI/stdio transport.
+
+## Contributing
+
+PRs welcome. Tool additions should include a zod schema, a unit test against
+a mocked `CanvasClient`, and an entry in `TOOL_MANIFEST.md`. Keep tool names
+in the `canvas_<verb>_<noun>` shape so the tool surface stays predictable.
+
+If you find a duplicate of something I missed during the original sweep,
+file an issue — I'd rather collapse than proliferate.
 
 ## License
 
-See [`LICENSE`](./LICENSE).
+MIT. See `LICENSE`.
