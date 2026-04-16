@@ -66,7 +66,6 @@ export const messageTools: ToolDef[] = [
     // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
     // Uncomment to enable sending, replying, bulk messaging, and deletion.
     // ============================================================
-    /*
     {
         name: "canvas_send_conversation",
         description: "Send a new conversation (message) to one or more recipients. Requires educator permissions.",
@@ -137,5 +136,4 @@ export const messageTools: ToolDef[] = [
             return jsonResult(result);
         },
     },
-    */
 ];

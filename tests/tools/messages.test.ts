@@ -104,4 +104,93 @@ describe("message tools", () => {
             { conversation: { workflow_state: "archived" } },
         );
     });
+
+    it("canvas_send_conversation posts a new conversation", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 10, subject: "Hello class" });
+        const tool = findTool("canvas_send_conversation");
+        const result = await tool.handler(
+            { recipients: ["user_42"], body: "Welcome!", subject: "Hello class" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/conversations",
+            expect.objectContaining({ recipients: ["user_42"], body: "Welcome!", subject: "Hello class" }),
+        );
+        expect(result.content[0].text).toContain("Hello class");
+    });
+
+    it("canvas_send_conversation omits subject and context_code when not provided", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 11 });
+        const tool = findTool("canvas_send_conversation");
+        await tool.handler(
+            { recipients: ["user_7"], body: "Hi" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        const payload = post.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload).not.toHaveProperty("subject");
+        expect(payload).not.toHaveProperty("context_code");
+    });
+
+    it("canvas_reply_to_conversation posts to add_message endpoint", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 5, body: "Reply text" });
+        const tool = findTool("canvas_reply_to_conversation");
+        const result = await tool.handler(
+            { conversation_id: 5, body: "Reply text" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/conversations/5/add_message",
+            expect.objectContaining({ body: "Reply text" }),
+        );
+        expect(result.content[0].text).toContain("Reply text");
+    });
+
+    it("canvas_reply_to_conversation passes optional recipients", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 5 });
+        const tool = findTool("canvas_reply_to_conversation");
+        await tool.handler(
+            { conversation_id: 5, body: "cc you", recipients: ["user_9"] },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/conversations/5/add_message",
+            expect.objectContaining({ recipients: ["user_9"] }),
+        );
+    });
+
+    it("canvas_send_bulk_messages defaults bulk_message to true", async () => {
+        const post = vi.fn().mockResolvedValue([{ id: 20 }, { id: 21 }]);
+        const tool = findTool("canvas_send_bulk_messages");
+        const result = await tool.handler(
+            { recipients: ["user_1", "user_2"], body: "Broadcast" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/conversations",
+            expect.objectContaining({ bulk_message: true, recipients: ["user_1", "user_2"] }),
+        );
+        expect(result.content[0].text).toBeTruthy();
+    });
+
+    it("canvas_send_bulk_messages respects explicit bulk_message false", async () => {
+        const post = vi.fn().mockResolvedValue([{ id: 22 }]);
+        const tool = findTool("canvas_send_bulk_messages");
+        await tool.handler(
+            { recipients: ["user_3"], body: "Single", bulk_message: false },
+            { canvas: fakeCanvas({ post }) },
+        );
+        const payload = post.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.bulk_message).toBe(false);
+    });
+
+    it("canvas_delete_conversation calls delete on the conversation endpoint", async () => {
+        const del = vi.fn().mockResolvedValue({ deleted: true });
+        const tool = findTool("canvas_delete_conversation");
+        const result = await tool.handler(
+            { conversation_id: 99 },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith("/api/v1/conversations/99");
+        expect(result.content[0].text).toContain("true");
+    });
 });
