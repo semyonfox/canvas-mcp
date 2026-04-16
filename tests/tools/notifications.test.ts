@@ -61,4 +61,31 @@ describe("notification tools", () => {
         expect(get).toHaveBeenCalledWith("/api/v1/users/self/communication_channels", {});
         expect(result.content[0].text).toContain("student@example.com");
     });
+
+    it("canvas_dismiss_account_notification calls delete with notification id", async () => {
+        const del = vi.fn().mockResolvedValue({ success: true });
+        const tool = findTool("canvas_dismiss_account_notification");
+        const result = await tool.handler(
+            { notification_id: 42 },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith(
+            "/api/v1/accounts/self/account_notifications/42",
+        );
+        expect(result.content[0].text).toContain("true");
+    });
+
+    it("canvas_update_notification_preference calls put with channel and preference", async () => {
+        const put = vi.fn().mockResolvedValue({ notification_preferences: { frequency: "daily" } });
+        const tool = findTool("canvas_update_notification_preference");
+        const result = await tool.handler(
+            { channel_id: 7, notification: "assignment_due_date", frequency: "daily" },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith(
+            "/api/v1/users/self/communication_channels/7/notification_preferences/assignment_due_date",
+            { notification_preferences: { frequency: "daily" } },
+        );
+        expect(result.content[0].text).toContain("daily");
+    });
 });

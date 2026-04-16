@@ -48,7 +48,6 @@ export const notificationTools: ToolDef[] = [
     // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
     // Uncomment to enable notification dismissal and preference updates.
     // ============================================================
-    /*
     {
         name: "canvas_dismiss_account_notification",
         description: "Dismiss an account-level notification banner by ID. Requires educator permissions.",
@@ -79,5 +78,4 @@ export const notificationTools: ToolDef[] = [
             return jsonResult(result);
         },
     },
-    */
 ];
