@@ -39,9 +39,7 @@ All tool names are normalised to `canvas_<verb>_<noun>` in snake_case. Endpoints
 | canvas_list_assignments | GET /api/v1/courses/:course_id/assignments | course_id, bucket?, include[]?, search_term?, per_page? | vishalsachdev, r-huijts, DMontgomery40 | paginated; bucket supports `past`, `overdue`, `undated`, `ungraded`, `unsubmitted`, `upcoming`, `future`; include[] supports `submission`, `all_dates`, `overrides` |
 | canvas_get_assignment | GET /api/v1/courses/:course_id/assignments/:id | course_id, assignment_id, include[]? | r-huijts, DMontgomery40 | include[] supports `submission`, `rubric`, `assignment_visibility` |
 | canvas_list_assignment_groups | GET /api/v1/courses/:course_id/assignment_groups | course_id, include[]? | r-huijts, ahnopologetic, DMontgomery40 | include[] supports `assignments`, `submission` |
-| canvas_list_upcoming_assignments | GET /api/v1/users/self/upcoming_events | limit? | DMontgomery40, mtgibbs | returns assignments + calendar events due soon |
 | canvas_list_missing_assignments | GET /api/v1/users/self/missing_submissions | course_ids[]?, include[]?, filter[]? | mtgibbs | student-facing; filter[] supports `submittable`, `current_grading_period` |
-| canvas_list_due_this_week | (composite) GET /api/v1/users/self/upcoming_events | days? | mtgibbs | 7-day window over upcoming_events |
 
 ### Admin / educator (commented out in code)
 
@@ -82,9 +80,7 @@ All tool names are normalised to `canvas_<verb>_<noun>` in snake_case. Endpoints
 
 | Tool | Endpoint | Inputs | Sources | Notes |
 |------|----------|--------|---------|-------|
-| canvas_get_my_course_grades | GET /api/v1/users/self/enrollments | course_id?, state[]? | vishalsachdev, DMontgomery40 | returns computed/current/final grade from enrollment objects |
-| canvas_get_all_my_grades | GET /api/v1/users/self/enrollments | state[]? | DMontgomery40, mtgibbs | aggregated across all active enrollments |
-| canvas_list_recent_grades | GET /api/v1/users/self/enrollments (+ submissions) | limit?, since? | mtgibbs | composite; sorts graded submissions by `graded_at` desc |
+| canvas_get_my_grades | GET /api/v1/users/self/enrollments | course_id?, state[]?, limit? | vishalsachdev, DMontgomery40, mtgibbs | returns enrollment objects with current_score, final_score, current_grade, final_grade, and grading-period fields. state defaults to active+invited. limit is client-side |
 | canvas_get_assignment_feedback | GET /api/v1/courses/:course_id/assignments/:id/submissions/self | course_id, assignment_id | mtgibbs | wraps grading comments + rubric assessment |
 | canvas_get_grading_standards | GET /api/v1/courses/:course_id/grading_standards | course_id | r-huijts | letter-grade thresholds for the course |
 
@@ -151,7 +147,7 @@ All tool names are normalised to `canvas_<verb>_<noun>` in snake_case. Endpoints
 | Tool | Endpoint | Inputs | Sources | Notes |
 |------|----------|--------|---------|-------|
 | canvas_list_calendar_events | GET /api/v1/calendar_events | context_codes[]?, start_date?, end_date?, type? | aryankeluskar, ahnopologetic, DMontgomery40 | paginated; `type` can be `event` or `assignment` |
-| canvas_list_upcoming_events | GET /api/v1/users/self/upcoming_events | — | DMontgomery40, mtgibbs | next 14 days of events + assignments |
+| canvas_list_upcoming_events | GET /api/v1/users/self/upcoming_events | type?, days?, limit? | DMontgomery40, mtgibbs | canonical "what's coming up" tool. Canvas returns assignments + events merged; type/days/limit are client-side filters |
 | canvas_list_planner_items | GET /api/v1/planner/items | start_date?, end_date?, context_codes[]? | ahnopologetic, Kuria-Mbatia | student planner surface |
 | canvas_list_todo_items | GET /api/v1/users/self/todo | — | vishalsachdev, mtgibbs | todo entries: grading, submitting, reviewing |
 
@@ -273,7 +269,6 @@ All tool names are normalised to `canvas_<verb>_<noun>` in snake_case. Endpoints
 |------|----------|--------|---------|-------|
 | canvas_get_my_profile | GET /api/v1/users/self/profile | — | DMontgomery40, r-huijts, ahnopologetic | |
 | canvas_get_user_profile | GET /api/v1/users/:user_id/profile | user_id | DMontgomery40 | student can fetch visible profiles in shared courses |
-| canvas_list_my_courses_brief | GET /api/v1/users/self/courses | enrollment_state? | ahnopologetic | lean-field variant for profile/summary views |
 | canvas_get_my_settings | GET /api/v1/users/self/settings | — | DMontgomery40 | |
 
 ### Admin / educator (commented out in code)
