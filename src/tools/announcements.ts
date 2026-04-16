@@ -70,10 +70,8 @@ export const announcementTools: ToolDef[] = [
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable announcement creation and deletion.
+    // ADMIN / EDUCATOR TOOLS — uncommented to enable announcement creation and deletion.
     // ============================================================
-    /*
     {
         name: "canvas_create_announcement",
         description: "Create an announcement in a course. Requires educator permissions.",
@@ -119,7 +117,7 @@ export const announcementTools: ToolDef[] = [
         }),
         handler: async (args, { canvas }) => {
             const results = await Promise.all(
-                args.announcement_ids.map((id) =>
+                args.announcement_ids.map((id: number) =>
                     canvas.delete(
                         `/api/v1/courses/${args.course_id}/discussion_topics/${id}`,
                     ),
@@ -128,5 +126,4 @@ export const announcementTools: ToolDef[] = [
             return jsonResult(results);
         },
     },
-    */
 ];

@@ -94,4 +94,62 @@ describe("announcement tools", () => {
         expect(get).toHaveBeenCalledWith("/api/v1/accounts/self/account_notifications", {});
         expect(result.content[0].text).toContain("System maintenance");
     });
+
+    it("canvas_create_announcement calls post with is_announcement and required fields", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 99, title: "New Announcement", is_announcement: true });
+        const tool = findTool("canvas_create_announcement");
+        const result = await tool.handler(
+            { course_id: 5, title: "New Announcement", message: "Hello class" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/5/discussion_topics",
+            expect.objectContaining({
+                is_announcement: true,
+                title: "New Announcement",
+                message: "Hello class",
+            }),
+        );
+        expect(result.content[0].text).toContain("New Announcement");
+    });
+
+    it("canvas_create_announcement passes delayed_post_at when provided", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 100, title: "Delayed" });
+        const tool = findTool("canvas_create_announcement");
+        await tool.handler(
+            { course_id: 5, title: "Delayed", message: "Coming soon", delayed_post_at: "2025-01-01T09:00:00Z" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/5/discussion_topics",
+            expect.objectContaining({ delayed_post_at: "2025-01-01T09:00:00Z" }),
+        );
+    });
+
+    it("canvas_delete_announcement calls delete with correct endpoint", async () => {
+        const del = vi.fn().mockResolvedValue({ deleted: true });
+        const tool = findTool("canvas_delete_announcement");
+        const result = await tool.handler(
+            { course_id: 10, announcement_id: 42 },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith(
+            "/api/v1/courses/10/discussion_topics/42",
+        );
+        expect(result.content[0].text).toContain("deleted");
+    });
+
+    it("canvas_bulk_delete_announcements calls delete for each id", async () => {
+        const del = vi.fn().mockResolvedValue({ deleted: true });
+        const tool = findTool("canvas_bulk_delete_announcements");
+        const result = await tool.handler(
+            { course_id: 20, announcement_ids: [1, 2, 3] },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledTimes(3);
+        expect(del).toHaveBeenCalledWith("/api/v1/courses/20/discussion_topics/1");
+        expect(del).toHaveBeenCalledWith("/api/v1/courses/20/discussion_topics/2");
+        expect(del).toHaveBeenCalledWith("/api/v1/courses/20/discussion_topics/3");
+        expect(result.content[0].text).toContain("deleted");
+    });
 });
