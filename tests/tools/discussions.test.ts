@@ -99,4 +99,72 @@ describe("discussion tools", () => {
         );
         expect(result.content[0].text).toContain("Hello world");
     });
+
+    it("canvas_create_discussion_topic posts a new topic", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 42, title: "New Topic" });
+        const tool = findTool("canvas_create_discussion_topic");
+        const result = await tool.handler(
+            { course_id: 10, title: "New Topic", message: "Body text" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/discussion_topics",
+            expect.objectContaining({ title: "New Topic", message: "Body text" }),
+        );
+        expect(result.content[0].text).toContain("New Topic");
+    });
+
+    it("canvas_create_discussion_topic includes discussion_type when provided", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 43, title: "Threaded" });
+        const tool = findTool("canvas_create_discussion_topic");
+        await tool.handler(
+            { course_id: 10, title: "Threaded", message: "Body", discussion_type: "threaded" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/discussion_topics",
+            expect.objectContaining({ discussion_type: "threaded" }),
+        );
+    });
+
+    it("canvas_post_discussion_entry posts a top-level entry", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 200, message: "My reply" });
+        const tool = findTool("canvas_post_discussion_entry");
+        const result = await tool.handler(
+            { course_id: 10, topic_id: 5, message: "My reply" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/discussion_topics/5/entries",
+            { message: "My reply" },
+        );
+        expect(result.content[0].text).toContain("My reply");
+    });
+
+    it("canvas_reply_to_discussion_entry posts a nested reply", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 300, message: "Nested reply" });
+        const tool = findTool("canvas_reply_to_discussion_entry");
+        const result = await tool.handler(
+            { course_id: 10, topic_id: 5, entry_id: 100, message: "Nested reply" },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/discussion_topics/5/entries/100/replies",
+            { message: "Nested reply" },
+        );
+        expect(result.content[0].text).toContain("Nested reply");
+    });
+
+    it("canvas_delete_discussion_topic calls delete for a topic", async () => {
+        const del = vi.fn().mockResolvedValue({ deleted: true });
+        const tool = findTool("canvas_delete_discussion_topic");
+        const result = await tool.handler(
+            { course_id: 10, topic_id: 5 },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith(
+            "/api/v1/courses/10/discussion_topics/5",
+        );
+        expect(result.content[0].text).toContain("deleted");
+    });
 });

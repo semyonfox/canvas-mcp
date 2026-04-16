@@ -98,7 +98,6 @@ export const discussionTools: ToolDef[] = [
     // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
     // Uncomment to enable discussion topic creation, posting, and deletion.
     // ============================================================
-    /*
     {
         name: "canvas_create_discussion_topic",
         description: "Create a new discussion topic in a course. Requires educator permissions.",
@@ -167,5 +166,4 @@ export const discussionTools: ToolDef[] = [
             return jsonResult(result);
         },
     },
-    */
 ];
