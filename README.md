@@ -2,10 +2,8 @@
 
 An MCP server for Canvas LMS, written in TypeScript. One server, the whole
 Canvas REST surface — built to be useful for students, teachers, academic
-staff, and administrators alike. Default build exposes the read-heavy
-student-safe subset. Instructor and admin tools live in the same source
-files, one uncomment away, so you pick your surface by uncommenting what
-you want rather than installing a different package.
+staff, and administrators alike. Everything's on by default; trim what
+you don't want rather than flip flags to turn things on.
 
 The project started as a union of the twelve existing open-source Canvas
 MCP servers — all MIT or ISC licensed — normalised, deduped, and merged
@@ -15,32 +13,32 @@ the design borrows from; full credit goes to their authors.
 ## Scope
 
 Canvas has a big API. This server aims to expose the useful parts of it in
-a way that makes sense to both a language model and a human. Fifteen Canvas
-domains are covered:
+a way that makes sense to both a language model and a human. Fifteen
+Canvas domains are covered:
 
 courses, assignments, submissions, grades, modules, pages, calendar,
 announcements, discussions, files, messages, notifications, profile,
 quizzes, rubrics.
 
-Each domain file in `src/tools/` holds the full set of tools for that area
-— reads, writes, deletes, everything. By default only the student-safe
-reads are registered; the instructor- and admin-level tools (creating
-courses, grading submissions, posting announcements, managing enrolments,
-authoring quizzes, etc.) sit in a `/* ... */` block at the bottom of each
-file marked `ADMIN / EDUCATOR TOOLS`. Uncomment what you need.
+129 tools registered out of the box — reads, writes, creates, deletes,
+the full surface. Every tool has a unit test against a mocked Canvas
+client. `TOOL_MANIFEST.md` lists them all with endpoints, inputs, and the
+source repos each one is cribbed from.
 
-There's no feature flag or env toggle for this on purpose. Turning on
-write access to someone's institution should be a deliberate, visible code
-change — one you can review and commit.
+Canvas enforces its own permission model on every call, so a student token
+will only be able to do student things regardless of what's registered —
+the server doesn't try to gate anything it doesn't need to. If you want a
+narrower tool surface for a specific deployment (a student agent, say,
+that should never see `canvas_delete_course`), delete or comment the tools
+you don't want from `src/tools/<domain>.ts` and rebuild. No feature flags,
+no env toggle — the fork point is a visible code change.
 
-## Current numbers
-
-- 63 tools registered in the default student build.
-- ~70 admin/educator tools commented out in-file, ready to enable.
-- ~130 tools total across the codebase.
-
-`TOOL_MANIFEST.md` has the full per-tool breakdown: names, endpoints,
-inputs, source repos.
+Two tools are honest stubs because Canvas requires multi-step client-side
+flows the server can't transparently wrap: `canvas_upload_file` (three-step
+upload handshake) and the `online_upload`/`media_recording` paths of
+`canvas_submit_assignment`. Text and URL submissions work end-to-end.
+`canvas_download_file_to_disk` returns a pre-authenticated URL rather than
+writing to disk — callers can fetch it directly.
 
 ## Getting it running
 
@@ -105,22 +103,14 @@ processes — Fargate, Cloud Run, Fly, a bare VM, Lambda with a
 streamable-http adapter. Whatever you pick, source the Canvas token from
 a proper secret store rather than baking it into the image.
 
-## Enabling instructor and admin tools
+## Trimming the tool surface
 
-Each `src/tools/<domain>.ts` ends with a banner comment followed by a
-`/* ... */` block containing the admin and educator tools for that
-domain. To enable, for example, announcement posting:
-
-1. Open `src/tools/announcements.ts`.
-2. Scroll to the `ADMIN / EDUCATOR TOOLS` banner.
-3. Remove the surrounding `/*` and `*/` (or uncomment the specific tools
-   you want — each is an object in the array).
-4. Rebuild.
-
-The tools are fully implemented — schema, handler, endpoint — they're
-just not registered by default. `TOOL_MANIFEST.md` lists every admin/
-educator tool per domain so you can see what's available without reading
-source.
+To narrow the set of tools exposed to a particular client, open the
+relevant `src/tools/<domain>.ts` file and delete or comment out the tool
+objects you don't want. Each tool is a standalone object in the domain's
+array — no cross-tool coupling, no shared state, no feature flag — so
+removing one is a local change. Rebuild and that tool is gone from the
+`tools/list` response.
 
 ## Testing
 
