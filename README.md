@@ -55,12 +55,33 @@ Requires Node 22+.
 
 ### Environment
 
+All Canvas-related env vars are optional — if unset, the server expects
+per-request headers from callers (see the next section).
+
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `CANVAS_API_TOKEN` | yes | — | Canvas user API token. Generate one under Account → Settings → Approved Integrations. |
-| `CANVAS_DOMAIN` | yes | — | Your institution's Canvas host, no scheme. e.g. `universityofgalway.instructure.com`. |
+| `CANVAS_API_TOKEN` | no | — | Fallback Canvas user API token. Used when the caller doesn't send `X-Canvas-Token`. Handy for personal/dev use. |
+| `CANVAS_DOMAIN` | no | — | Fallback Canvas host (no scheme). Used when the caller doesn't send `X-Canvas-Domain`. |
 | `PORT` | no | `3001` | HTTP port. |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error`. |
+
+### Per-request credentials
+
+The server can operate in two modes, picked per-request:
+
+- **Shared single-tenant.** Set `CANVAS_API_TOKEN` and `CANVAS_DOMAIN` in the
+  environment. Clients send plain MCP calls; the server uses the env
+  credentials for everything. Simple, good for personal use.
+- **Multi-tenant passthrough.** Leave the env unset. Each MCP call must
+  carry `X-Canvas-Token` and `X-Canvas-Domain` headers, which the server
+  uses to build a per-request Canvas client. The token is never stored —
+  it's only held in memory for the duration of the request. Ideal when
+  upstream callers (e.g. an app backend) already hold per-user Canvas
+  credentials and want to forward them.
+
+The two modes mix cleanly: env acts as a fallback when a header is absent.
+Requests with no token available (neither header nor env) get a `401` with
+an explanatory JSON body and no Canvas call is made.
 
 ## Transport
 
@@ -99,9 +120,26 @@ shell.
 
 Nothing about the server assumes any particular host. It's a node process
 listening on a port. Run it wherever you run containers or long-lived
-processes — Fargate, Cloud Run, Fly, a bare VM, Lambda with a
-streamable-http adapter. Whatever you pick, source the Canvas token from
-a proper secret store rather than baking it into the image.
+processes.
+
+The transport runs in stateless mode — each MCP call is self-contained,
+no session state held between requests — so Lambda-style serverless hosts
+work as well as long-lived containers. Graceful shutdown on `SIGTERM` is
+handled, so rolling deploys on Fargate/Cloud Run/Fly won't drop in-flight
+requests.
+
+Rough fit:
+
+- **Lambda + function URL** — cheapest for low-to-medium traffic, free tier
+  covers most small apps. Cold start ~300-500ms on a fresh container.
+- **Cloud Run** — scales to zero like Lambda, no cold-start penalty if min
+  instances ≥ 1. Generous free tier.
+- **Fargate / ECS** — always warm, pay-per-hour. Worth it once traffic is
+  steady enough that cold-start latency becomes annoying.
+
+If you set env-level fallback credentials (`CANVAS_API_TOKEN` /
+`CANVAS_DOMAIN`), source them from a proper secret store rather than
+baking them into the image.
 
 ## Trimming the tool surface
 

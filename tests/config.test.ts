@@ -24,10 +24,10 @@ describe("loadConfig", () => {
     expect(cfg.logLevel).toBe("info");
   });
 
-  it("rejects missing token", () => {
-    expect(() =>
-      loadConfig({ CANVAS_DOMAIN: "example.instructure.com" }),
-    ).toThrow(/CANVAS_API_TOKEN/);
+  it("returns undefined token and domain when not provided", () => {
+    const cfg = loadConfig({});
+    expect(cfg.canvasApiToken).toBeUndefined();
+    expect(cfg.canvasDomain).toBeUndefined();
   });
 
   it("strips scheme from domain", () => {

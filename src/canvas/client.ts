@@ -7,7 +7,10 @@ export interface CanvasClientOptions {
     domain: string;
     token: string;
     fetch?: FetchLike;
+    timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 type QueryValue = string | number | boolean | undefined | null | Array<string | number | boolean>;
 export type Query = Record<string, QueryValue>;
@@ -16,11 +19,13 @@ export class CanvasClient {
     private readonly baseUrl: string;
     private readonly token: string;
     private readonly fetchImpl: FetchLike;
+    private readonly timeoutMs: number;
 
     constructor(opts: CanvasClientOptions) {
         this.baseUrl = `https://${opts.domain}`;
         this.token = opts.token;
         this.fetchImpl = opts.fetch ?? fetch;
+        this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     }
 
     async get<T>(path: string, query?: Query): Promise<T> {
@@ -66,10 +71,11 @@ export class CanvasClient {
 
     private async requestAbsolute(url: string): Promise<Response> {
         const headers = new Headers({ authorization: `Bearer ${this.token}`, accept: "application/json" });
-        let res = await this.fetchImpl(url, { method: "GET", headers });
+        const init = (): RequestInit => ({ method: "GET", headers, signal: AbortSignal.timeout(this.timeoutMs) });
+        let res = await this.fetchImpl(url, init());
         if (res.status >= 500) {
             await new Promise((r) => setTimeout(r, 200));
-            res = await this.fetchImpl(url, { method: "GET", headers });
+            res = await this.fetchImpl(url, init());
         }
         if (!res.ok) {
             throw new CanvasError(res.status, `Canvas pagination fetch failed: ${res.statusText}`);
@@ -88,13 +94,14 @@ export class CanvasClient {
         const init: RequestInit = {
             method: opts.method,
             headers,
+            signal: AbortSignal.timeout(this.timeoutMs),
             ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
         };
 
         let res = await this.fetchImpl(url, init);
         if (res.status >= 500) {
             await sleep(200 + Math.random() * 200);
-            res = await this.fetchImpl(url, init);
+            res = await this.fetchImpl(url, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
         }
 
         if (!res.ok) {
