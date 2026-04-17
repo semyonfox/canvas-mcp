@@ -141,6 +141,32 @@ If you set env-level fallback credentials (`CANVAS_API_TOKEN` /
 `CANVAS_DOMAIN`), source them from a proper secret store rather than
 baking them into the image.
 
+## How it works
+
+The server is a thin wrapper around the Canvas REST API. End-to-end, a
+single tool call goes like this:
+
+1. **HTTP request hits the server.** `GET /health` short-circuits to a
+   200; everything else is MCP traffic over streamable-http.
+2. **Credentials are resolved.** The server reads `X-Canvas-Token` and
+   `X-Canvas-Domain` from the request headers, falling back to
+   `CANVAS_API_TOKEN` / `CANVAS_DOMAIN` env vars if unset. Missing
+   credentials → `401`, no further work.
+3. **A per-request `CanvasClient` is built** with those credentials and
+   scoped to the request via `AsyncLocalStorage`. Tool handlers read it
+   through the `ToolContext` they're given — they never touch headers
+   directly.
+4. **MCP dispatches** the `tools/call` to the matching tool handler in
+   `src/tools/<domain>.ts`. The handler's zod schema validates inputs,
+   then it uses `canvas.get` / `canvas.post` / etc. to hit the real
+   Canvas endpoint.
+5. **Canvas's JSON response is stringified** and returned as MCP text
+   content. Canvas errors become MCP error responses with the status
+   and original message preserved.
+
+No caching, no queuing, no state kept between calls. If you want to add
+a tool, you're adding one file entry plus one test — see `CONTRIBUTING.md`.
+
 ## Trimming the tool surface
 
 To narrow the set of tools exposed to a particular client, open the
@@ -174,15 +200,10 @@ you want to exercise them too.
 
 ## Contributing
 
-PRs welcome. A tool addition should include:
-
-- A zod input schema.
-- A unit test against a mocked `CanvasClient`.
-- An entry in `TOOL_MANIFEST.md` with endpoint, inputs, and source notes.
-- A `canvas_<verb>_<noun>` name to keep the surface predictable.
-
-If you find a duplicate of something the original sweep missed, open an
-issue — I'd rather collapse than proliferate.
+PRs welcome. See `CONTRIBUTING.md` for the full guide — including a
+copy-paste recipe for adding a new tool, test patterns, and the
+`exactOptionalPropertyTypes` gotcha that trips most first-time
+contributors.
 
 ## Things deliberately left out for now
 
