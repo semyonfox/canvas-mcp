@@ -18,53 +18,52 @@ interface RequestState {
 
 const requestStore = new AsyncLocalStorage<RequestState>();
 
-const server = new Server(
-    { name: "canvas-mcp", version: "0.1.0" },
-    { capabilities: { tools: {} } },
-);
+function createMcpServer(): Server {
+    const server = new Server(
+        { name: "canvas-mcp", version: "0.1.0" },
+        { capabilities: { tools: {} } },
+    );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: allTools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        inputSchema: zodToJsonSchema(t.inputSchema, { target: "openApi3" }) as Record<string, unknown>,
-    })),
-}));
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+        tools: allTools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: zodToJsonSchema(t.inputSchema, { target: "openApi3" }) as Record<string, unknown>,
+        })),
+    }));
 
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const store = requestStore.getStore();
-    if (!store) {
-        return {
-            content: [{ type: "text" as const, text: "Canvas credentials missing: send X-Canvas-Token (and X-Canvas-Domain if no server default)." }],
-            isError: true,
-        };
-    }
-    const ctx: ToolContext = { canvas: store.canvas };
+    server.setRequestHandler(CallToolRequestSchema, async (req) => {
+        const store = requestStore.getStore();
+        if (!store) {
+            return {
+                content: [{ type: "text" as const, text: "Canvas credentials missing: send X-Canvas-Token (and X-Canvas-Domain if no server default)." }],
+                isError: true,
+            };
+        }
+        const ctx: ToolContext = { canvas: store.canvas };
 
-    const tool = allTools.find((t) => t.name === req.params.name);
-    if (!tool) {
-        return { content: [{ type: "text" as const, text: `Unknown tool: ${req.params.name}` }], isError: true };
-    }
-    const parsed = tool.inputSchema.safeParse(req.params.arguments ?? {});
-    if (!parsed.success) {
-        return { content: [{ type: "text" as const, text: `Invalid input: ${parsed.error.message}` }], isError: true };
-    }
-    try {
-        const result = await tool.handler(parsed.data, ctx);
-        return {
-            content: result.content.map((c) => ({ type: "text" as const, text: c.text })),
-            isError: result.isError,
-        };
-    } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: "text" as const, text: msg }], isError: true };
-    }
-});
+        const tool = allTools.find((t) => t.name === req.params.name);
+        if (!tool) {
+            return { content: [{ type: "text" as const, text: `Unknown tool: ${req.params.name}` }], isError: true };
+        }
+        const parsed = tool.inputSchema.safeParse(req.params.arguments ?? {});
+        if (!parsed.success) {
+            return { content: [{ type: "text" as const, text: `Invalid input: ${parsed.error.message}` }], isError: true };
+        }
+        try {
+            const result = await tool.handler(parsed.data, ctx);
+            return {
+                content: result.content.map((c) => ({ type: "text" as const, text: c.text })),
+                isError: result.isError,
+            };
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { content: [{ type: "text" as const, text: msg }], isError: true };
+        }
+    });
 
-// Stateless mode — each MCP request is self-contained.
-// Required for Lambda (no cross-invocation state) and fine on any other host.
-const transport = new StreamableHTTPServerTransport({});
-await server.connect(transport as unknown as Transport);
+    return server;
+}
 
 function headerValue(req: IncomingMessage, name: string): string | undefined {
     const raw = req.headers[name.toLowerCase()];
@@ -77,7 +76,25 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
     res.end(JSON.stringify(body));
 }
 
+const CORS_HEADERS = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+    "access-control-allow-headers": "Content-Type, Accept, Mcp-Session-Id, MCP-Protocol-Version, X-Canvas-Token, X-Canvas-Domain",
+};
+
 const http = createServer(async (req, res) => {
+    // CORS preflight
+    if (req.method === "OPTIONS") {
+        res.writeHead(204, CORS_HEADERS);
+        res.end();
+        return;
+    }
+
+    // Set CORS on every response
+    for (const [k, v] of Object.entries(CORS_HEADERS)) {
+        res.setHeader(k, v);
+    }
+
     if (req.method === "GET" && req.url === "/health") {
         writeJson(res, 200, { ok: true });
         return;
@@ -95,7 +112,11 @@ const http = createServer(async (req, res) => {
         return;
     }
 
+    // Stateless: new Server + Transport per request (SDK requirement)
     const canvas = new CanvasClient({ domain, token });
+    const server = createMcpServer();
+    const transport = new StreamableHTTPServerTransport({ enableJsonResponse: true });
+    await server.connect(transport as unknown as Transport);
     await requestStore.run({ canvas }, () => transport.handleRequest(req, res));
 });
 
