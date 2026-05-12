@@ -108,9 +108,9 @@ leave it as `—` or put your GitHub handle.
 ### 4. Verify
 
 ```bash
-npm test
-npm run typecheck
-npm run build
+pnpm test
+pnpm typecheck
+pnpm build
 ```
 
 All three must pass. If typecheck complains about an optional property,
@@ -169,6 +169,7 @@ Canvas instance. Useful when you're:
 - Pointing the server at a new institution for the first time.
 
 ```bash
+pnpm build
 CANVAS_API_TOKEN=... CANVAS_DOMAIN=... node scripts/verify-tools.mjs
 ```
 

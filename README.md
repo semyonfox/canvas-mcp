@@ -40,18 +40,33 @@ upload handshake) and the `online_upload`/`media_recording` paths of
 `canvas_download_file_to_disk` returns a pre-authenticated URL rather than
 writing to disk — callers can fetch it directly.
 
-## Getting it running
+## Quick start
 
 ```bash
 cp .env.example .env
 # fill in CANVAS_API_TOKEN and CANVAS_DOMAIN
-npm install
-npm run dev     # watch mode
+pnpm install
+pnpm dev
 # or
-npm run build && npm start
+pnpm build && pnpm start
 ```
 
-Requires Node 22+.
+Requires Node 22+ and pnpm 10+.
+
+## Install options
+
+If you want to run from source, use the quick start above.
+
+If you want a packaged install, the npm package exposes a `canvas-mcp`
+binary:
+
+```bash
+pnpm add -g canvas-mcp
+canvas-mcp
+```
+
+The published package only includes the runtime build (`dist/`) and core
+docs. Source, tests, and local dev files stay in the repository.
 
 ### Environment
 
@@ -181,8 +196,9 @@ removing one is a local change. Rebuild and that tool is gone from the
 Unit tests run against a mocked fetch:
 
 ```bash
-npm test
-npm run typecheck
+pnpm test
+pnpm typecheck
+pnpm build
 ```
 
 For live-fire verification against a real Canvas instance,
@@ -190,6 +206,7 @@ For live-fire verification against a real Canvas instance,
 goes and logging every call:
 
 ```bash
+pnpm build
 CANVAS_API_TOKEN=... CANVAS_DOMAIN=... node scripts/verify-tools.mjs
 ```
 
@@ -203,7 +220,8 @@ you want to exercise them too.
 PRs welcome. See `CONTRIBUTING.md` for the full guide — including a
 copy-paste recipe for adding a new tool, test patterns, and the
 `exactOptionalPropertyTypes` gotcha that trips most first-time
-contributors.
+contributors. CI runs the same release gate on every push and pull
+request: `pnpm test`, `pnpm typecheck`, and `pnpm build`.
 
 ## Things deliberately left out for now
 

@@ -6,3 +6,4 @@ dist/
 *.log
 reference/
 package-lock.json
+.claude/

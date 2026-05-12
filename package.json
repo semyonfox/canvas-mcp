@@ -2,14 +2,40 @@
   "name": "canvas-mcp",
   "version": "0.1.0",
   "description": "Unified MCP server for Canvas LMS",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/semyonfox/canvas-mcp.git"
+  },
+  "homepage": "https://github.com/semyonfox/canvas-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/semyonfox/canvas-mcp/issues"
+  },
+  "keywords": [
+    "canvas",
+    "canvas-lms",
+    "mcp",
+    "model-context-protocol",
+    "typescript"
+  ],
+  "packageManager": "pnpm@10.33.2",
   "bin": {
     "canvas-mcp": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "ATTRIBUTION.md",
+    "TOOL_MANIFEST.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
+    "check": "pnpm test && pnpm typecheck && pnpm build",
+    "prepack": "pnpm build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
