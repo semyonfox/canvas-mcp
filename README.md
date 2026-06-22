@@ -225,7 +225,7 @@ request: `pnpm test`, `pnpm typecheck`, and `pnpm build`.
 
 ## Things deliberately left out for now
 
-- Per-user OAuth / multi-tenant auth (single token per deployment).
+- Built-in OAuth token acquisition and refresh flows (callers provide tokens via env or request headers).
 - Response caching.
 - MCP prompts and resources (only tools are exposed).
 - stdio transport — streamable-http handles local and remote use.
