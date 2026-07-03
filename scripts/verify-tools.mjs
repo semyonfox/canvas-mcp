@@ -169,7 +169,7 @@ if (!courseId) {
         }
         const firstAnn = await run("canvas_list_announcements", { context_codes: [`course_${courseId}`] });
         const annId = pickFirst(firstAnn, "id");
-        if (annId) await run("canvas_get_announcement", { topic_id: annId });
+        if (annId) await run("canvas_get_announcement", { course_id: courseId, announcement_id: annId });
     }
 
     const files = await run("canvas_list_course_files", { course_id: courseId });
