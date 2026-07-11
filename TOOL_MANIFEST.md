@@ -174,7 +174,9 @@ All tool names follow `canvas_<verb>_<noun>` in snake_case. Endpoints are Canvas
 | canvas_get_announcement | GET /api/v1/courses/:course_id/discussion_topics/:topic_id | course_id, announcement_id | vishalsachdev | announcements are discussion topics with `is_announcement=true` |
 | canvas_list_account_notifications | GET /api/v1/accounts/self/account_notifications | — | Kuria-Mbatia | global institution-wide notices |
 
-### Admin / educator (commented out in code)
+### Admin / educator
+
+These announcement mutation tools are registered in `src/tools/announcements.ts` and should be used only with appropriate Canvas educator permissions.
 
 | Tool | Endpoint | Marker |
 |------|----------|--------|
