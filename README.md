@@ -28,34 +28,78 @@ Request-scoped Canvas client
 Canvas LMS REST API
 ```
 
-Canvas credentials may be supplied per request with `X-Canvas-Token` and `X-Canvas-Domain`, or configured as environment fallbacks for a deliberately private deployment.
+## Prerequisites
 
-## Important security boundary
-
-This server registers both read and mutating operations by default. Canvas and institution configuration determine whether a supplied token may perform a downstream action, but this project does **not** add server-side RBAC, confirmation prompts or role-based tool filtering.
-
-Deployers should:
-
-- use least-privilege Canvas tokens;
-- remove tools they do not intend to expose and rebuild the server;
-- protect the endpoint with TLS and network or reverse-proxy access controls;
-- avoid publicly exposing a deployment that uses fallback environment credentials;
-- ensure credentials never enter application, proxy or observability logs.
-
-Tool removal is a source-level deployment choice, not runtime authorization.
+- Node.js 22+
+- pnpm 10+
+- A Canvas token and domain only when making a real Canvas request
 
 ## Run locally
 
-Requirements: Node.js 22+ and pnpm 10+.
+Install and start the HTTP server:
+
+```bash
+pnpm install --frozen-lockfile
+PORT=3001 pnpm dev
+```
+
+The health endpoint needs no Canvas credentials:
+
+```bash
+curl --fail-with-body http://127.0.0.1:3001/health
+# {"ok":true}
+```
+
+The MCP endpoint is `POST /`. A `tools/list` request validates the transport and tool registration without calling Canvas; placeholder credentials are enough:
+
+```bash
+curl --fail-with-body --silent --show-error \
+  -X POST http://127.0.0.1:3001/ \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'X-Canvas-Token: smoke-test-token' \
+  -H 'X-Canvas-Domain: example.instructure.com' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+For actual Canvas calls, supply a valid token/domain through the two request headers above, or configure private server defaults:
+
+```bash
+CANVAS_API_TOKEN='…' \
+CANVAS_DOMAIN='your-school.instructure.com' \
+PORT=3001 \
+pnpm start
+```
+
+The server does **not** load `.env` itself. To use `.env.example` as a private local file, source it explicitly in a POSIX shell:
 
 ```bash
 cp .env.example .env
-# Set CANVAS_API_TOKEN and CANVAS_DOMAIN only for a private development deployment.
-pnpm install
+# Fill in only credentials you control; do not commit this file.
+set -a
+. ./.env
+set +a
 pnpm dev
 ```
 
-The package is configured with a `canvas-mcp` executable after installation.
+Per-request `X-Canvas-Token` and `X-Canvas-Domain` values take precedence over environment defaults. `PORT` defaults to `3001`; `LOG_LEVEL` accepts `debug`, `info`, `warn` or `error`.
+
+## Docker
+
+There is no Compose dependency for this service.
+
+```bash
+docker build -t canvas-mcp:latest .
+docker run --rm \
+  --name canvas-mcp \
+  -p 127.0.0.1:3001:3001 \
+  -e CANVAS_API_TOKEN='…' \
+  -e CANVAS_DOMAIN='your-school.instructure.com' \
+  -e LOG_LEVEL=info \
+  canvas-mcp:latest
+```
+
+Omit the `CANVAS_*` environment variables for a request-scoped-credential deployment, then send both headers with every MCP request.
 
 ## Validate
 
@@ -63,7 +107,31 @@ The package is configured with a `canvas-mcp` executable after installation.
 pnpm check
 ```
 
-The repository also includes an optional credentialed verification script. It is intentionally separate from mocked tests because it can reach a real Canvas environment.
+This runs tests, typechecking and the production build. For credentialed manual verification against a real Canvas environment:
+
+```bash
+pnpm build
+CANVAS_API_TOKEN='…' \
+CANVAS_DOMAIN='your-school.instructure.com' \
+node scripts/verify-tools.mjs
+```
+
+The live verifier writes request/result information to stdout; use an isolated, least-privilege test token and treat its output as sensitive.
+
+## Important security boundary
+
+This server registers both read and mutating operations by default. Canvas and institution configuration determine whether a supplied token may perform a downstream action, but this project does **not** add server-side RBAC, client authentication, confirmation prompts or runtime tool filtering.
+
+Deployers should:
+
+- use least-privilege, revocable Canvas tokens;
+- remove tools they do not intend to expose and rebuild the server;
+- place the service behind TLS plus network/reverse-proxy access controls;
+- avoid public fallback-token deployments;
+- restrict access to approved Canvas domains and trusted clients;
+- ensure credentials never enter source, image layers, shell history, proxies or observability logs.
+
+Tool removal is a source-level deployment choice, not runtime authorization. The endpoint currently permits broad browser origins and accepts credential headers, so it is unsuitable for direct public exposure.
 
 ## Scope and limitations
 
