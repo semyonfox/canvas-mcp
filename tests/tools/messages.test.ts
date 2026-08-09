@@ -63,7 +63,7 @@ describe("message tools", () => {
         );
         expect(get).toHaveBeenCalledWith(
             "/api/v1/conversations/5",
-            { include: ["participant_avatars"] },
+            { auto_mark_as_read: false, include: ["participant_avatars"] },
         );
     });
 

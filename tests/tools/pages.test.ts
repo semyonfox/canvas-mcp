@@ -44,7 +44,7 @@ describe("page tools", () => {
         const get = vi.fn().mockResolvedValue({ url: "week-1", title: "Week 1", body: "<p>hello</p>" });
         const tool = findTool("canvas_get_page");
         const result = await tool.handler(
-            { course_id: 10, page_url: "week-1" },
+            { course_id: 10, page_url_or_id: "week-1" },
             { canvas: fakeCanvas({ get }) },
         );
         expect(get).toHaveBeenCalledWith(
@@ -52,6 +52,29 @@ describe("page tools", () => {
             {},
         );
         expect(result.content[0].text).toContain("Week 1");
+    });
+
+    it("canvas_get_page accepts the Canvas page_id selector and encodes it as one path segment", async () => {
+        const get = vi.fn().mockResolvedValue({ id: "9007199254740993", title: "Large ID page" });
+        const tool = findTool("canvas_get_page");
+        await tool.handler(
+            { course_id: "10", page_url_or_id: "page_id:9007199254740993" },
+            { canvas: fakeCanvas({ get }) },
+        );
+        expect(get).toHaveBeenCalledWith(
+            "/api/v1/courses/10/pages/page_id%3A9007199254740993",
+            {},
+        );
+    });
+
+    it("canvas_get_page keeps page_url as a legacy input alias", async () => {
+        const get = vi.fn().mockResolvedValue({ url: "week-1" });
+        const tool = findTool("canvas_get_page");
+        await tool.handler(
+            { course_id: 10, page_url: "week-1" },
+            { canvas: fakeCanvas({ get }) },
+        );
+        expect(get).toHaveBeenCalledWith("/api/v1/courses/10/pages/week-1", {});
     });
 
     it("canvas_get_front_page fetches the course front page", async () => {
@@ -72,7 +95,7 @@ describe("page tools", () => {
         const collect = vi.fn().mockResolvedValue([{ revision_id: 3, updated_at: "2024-01-01" }]);
         const tool = findTool("canvas_list_page_revisions");
         const result = await tool.handler(
-            { course_id: 10, page_url: "week-1" },
+            { course_id: 10, page_url_or_id: "week-1" },
             { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
         expect(collect).toHaveBeenCalledWith(
@@ -86,7 +109,7 @@ describe("page tools", () => {
         const get = vi.fn().mockResolvedValue({ revision_id: 2, title: "Week 1 v2", body: "<p>updated</p>" });
         const tool = findTool("canvas_get_page_revision");
         const result = await tool.handler(
-            { course_id: 10, page_url: "week-1", revision_id: 2 },
+            { course_id: 10, page_url_or_id: "week-1", revision_id: 2 },
             { canvas: fakeCanvas({ get }) },
         );
         expect(get).toHaveBeenCalledWith(
@@ -116,7 +139,7 @@ describe("page tools", () => {
         const put = vi.fn().mockResolvedValue({ url: "week-1", title: "Week 1 Updated", published: false });
         const tool = findTool("canvas_update_page");
         const result = await tool.handler(
-            { course_id: 10, page_url: "week-1", title: "Week 1 Updated", published: false },
+            { course_id: 10, page_url_or_id: "week-1", title: "Week 1 Updated", published: false },
             { canvas: fakeCanvas({ put }) },
         );
         expect(put).toHaveBeenCalledWith(
@@ -132,7 +155,7 @@ describe("page tools", () => {
         const del = vi.fn().mockResolvedValue({ deleted: true });
         const tool = findTool("canvas_delete_page");
         const result = await tool.handler(
-            { course_id: 10, page_url: "week-1" },
+            { course_id: 10, page_url_or_id: "week-1" },
             { canvas: fakeCanvas({ delete: del }) },
         );
         expect(del).toHaveBeenCalledWith("/api/v1/courses/10/pages/week-1");
@@ -143,7 +166,7 @@ describe("page tools", () => {
         const post = vi.fn().mockResolvedValue({ revision_id: 1, title: "Week 1 original" });
         const tool = findTool("canvas_revert_page_revision");
         const result = await tool.handler(
-            { course_id: 10, page_url: "week-1", revision_id: 1 },
+            { course_id: 10, page_url_or_id: "week-1", revision_id: 1 },
             { canvas: fakeCanvas({ post }) },
         );
         expect(post).toHaveBeenCalledWith(

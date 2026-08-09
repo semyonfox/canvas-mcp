@@ -1,6 +1,6 @@
 {
   "name": "canvas-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Unified MCP server for Canvas LMS",
   "license": "MIT",
   "type": "module",
@@ -51,14 +51,15 @@
     }
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^3.25.76",
-    "zod-to-json-schema": "^3.25.2"
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^22.19.19",
-    "tsx": "^4.23.0",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "tsx": "^4.23.11",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   }
 }

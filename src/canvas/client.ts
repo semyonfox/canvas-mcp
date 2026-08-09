@@ -11,41 +11,52 @@ export interface CanvasClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const CANVAS_ACCEPT_HEADER = "application/json+canvas-string-ids";
+const MAX_READ_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 200;
+const MAX_RETRY_DELAY_MS = 5_000;
 
 type QueryValue = string | number | boolean | undefined | null | Array<string | number | boolean>;
 export type Query = Record<string, QueryValue>;
 
 export class CanvasClient {
     private readonly baseUrl: string;
+    private readonly baseOrigin: string;
     private readonly token: string;
     private readonly fetchImpl: FetchLike;
     private readonly timeoutMs: number;
 
     constructor(opts: CanvasClientOptions) {
         this.baseUrl = `https://${opts.domain}`;
+        this.baseOrigin = new URL(this.baseUrl).origin;
         this.token = opts.token;
         this.fetchImpl = opts.fetch ?? fetch;
         this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     }
 
-    async get<T>(path: string, query?: Query): Promise<T> {
+    async get<T>(path: string, query?: Query): Promise<T | null> {
         const res = await this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
-        return (await res.json()) as T;
+        return readJsonOrNull<T>(res);
     }
 
-    async post<T>(path: string, body?: unknown): Promise<T> {
+    async post<T>(path: string, body?: unknown): Promise<T | null> {
         const res = await this.request(path, { method: "POST", ...(body !== undefined ? { body } : {}) });
-        return (await res.json()) as T;
+        return readJsonOrNull<T>(res);
     }
 
-    async put<T>(path: string, body?: unknown): Promise<T> {
+    async put<T>(path: string, body?: unknown): Promise<T | null> {
         const res = await this.request(path, { method: "PUT", ...(body !== undefined ? { body } : {}) });
-        return (await res.json()) as T;
+        return readJsonOrNull<T>(res);
     }
 
-    async delete<T>(path: string, body?: unknown): Promise<T> {
+    async patch<T>(path: string, body?: unknown): Promise<T | null> {
+        const res = await this.request(path, { method: "PATCH", ...(body !== undefined ? { body } : {}) });
+        return readJsonOrNull<T>(res);
+    }
+
+    async delete<T>(path: string, body?: unknown): Promise<T | null> {
         const res = await this.request(path, { method: "DELETE", ...(body !== undefined ? { body } : {}) });
-        return (await res.json()) as T;
+        return readJsonOrNull<T>(res);
     }
 
     async getRaw(path: string, query?: Query): Promise<Response> {
@@ -55,7 +66,8 @@ export class CanvasClient {
     async *getPaginated<T>(path: string, query?: Query): AsyncIterable<T[]> {
         let res = await this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
         while (true) {
-            const batch = (await res.json()) as T[];
+            const batch = await readJsonOrNull<T[]>(res);
+            if (batch === null) return;
             yield batch;
             const next = parseNextLink(res.headers.get("link"));
             if (!next) return;
@@ -70,15 +82,12 @@ export class CanvasClient {
     }
 
     private async requestAbsolute(url: string): Promise<Response> {
-        const headers = new Headers({ authorization: `Bearer ${this.token}`, accept: "application/json" });
+        this.assertPaginationOrigin(url);
+        const headers = new Headers({ authorization: `Bearer ${this.token}`, accept: CANVAS_ACCEPT_HEADER });
         const init = (): RequestInit => ({ method: "GET", headers, signal: AbortSignal.timeout(this.timeoutMs) });
-        let res = await this.fetchImpl(url, init());
-        if (res.status >= 500) {
-            await new Promise((r) => setTimeout(r, 200));
-            res = await this.fetchImpl(url, init());
-        }
+        const res = await this.fetchWithReadRetries(url, init);
         if (!res.ok) {
-            throw new CanvasError(res.status, `Canvas pagination fetch failed: ${res.statusText}`);
+            throw await this.toCanvasError(res, "pagination fetch");
         }
         return res;
     }
@@ -87,29 +96,51 @@ export class CanvasClient {
         const url = this.buildUrl(path, opts.query);
         const headers = new Headers({
             authorization: `Bearer ${this.token}`,
-            accept: "application/json",
+            accept: CANVAS_ACCEPT_HEADER,
         });
         if (opts.body !== undefined) headers.set("content-type", "application/json");
 
-        const init: RequestInit = {
+        const init = (): RequestInit => ({
             method: opts.method,
             headers,
             signal: AbortSignal.timeout(this.timeoutMs),
             ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
-        };
+        });
 
-        let res = await this.fetchImpl(url, init);
-        if (res.status >= 500) {
-            await sleep(200 + Math.random() * 200);
-            res = await this.fetchImpl(url, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
-        }
+        const res = opts.method === "GET"
+            ? await this.fetchWithReadRetries(url, init)
+            : await this.fetchImpl(url, init());
 
         if (!res.ok) {
-            const body = await safeJson(res);
-            const canvasMessage = extractCanvasMessage(body) ?? res.statusText;
-            throw new CanvasError(res.status, `Canvas ${opts.method} ${path} failed: ${canvasMessage}`, { body });
+            throw await this.toCanvasError(res, `${opts.method} ${path}`);
         }
         return res;
+    }
+
+    private async fetchWithReadRetries(url: string, init: () => RequestInit): Promise<Response> {
+        for (let attempt = 0; ; attempt += 1) {
+            const res = await this.fetchImpl(url, init());
+            if (!isRetryableReadResponse(res.status) || attempt >= MAX_READ_RETRIES) return res;
+            await sleep(retryDelayMs(res, attempt));
+        }
+    }
+
+    private assertPaginationOrigin(url: string): void {
+        let next: URL;
+        try {
+            next = new URL(url);
+        } catch {
+            throw new CanvasError(502, "Canvas pagination link is invalid.");
+        }
+        if (next.origin !== this.baseOrigin) {
+            throw new CanvasError(502, "Canvas pagination link points outside the configured Canvas origin.");
+        }
+    }
+
+    private async toCanvasError(res: Response, operation: string): Promise<CanvasError> {
+        const body = await safeBody(res);
+        const canvasMessage = extractCanvasMessage(body) ?? (res.statusText || `HTTP ${res.status}`);
+        return new CanvasError(res.status, `Canvas ${operation} failed: ${canvasMessage}`, { body });
     }
 
     private buildUrl(path: string, query?: Query): string {
@@ -128,24 +159,73 @@ export class CanvasClient {
     }
 }
 
-async function safeJson(res: Response): Promise<unknown> {
+function isRetryableReadResponse(status: number): boolean {
+    return status === 429 || (status >= 500 && status < 600);
+}
+
+function retryDelayMs(res: Response, attempt: number): number {
+    const retryAfter = retryAfterMs(res.headers.get("retry-after"));
+    if (retryAfter !== undefined) return retryAfter;
+    return Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS);
+}
+
+function retryAfterMs(value: string | null): number | undefined {
+    if (!value) return undefined;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+        return Math.min(seconds * 1_000, MAX_RETRY_DELAY_MS);
+    }
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) return undefined;
+    return Math.min(Math.max(timestamp - Date.now(), 0), MAX_RETRY_DELAY_MS);
+}
+
+async function readJsonOrNull<T>(res: Response): Promise<T | null> {
+    if (res.status === 204 || res.status === 205) return null;
+    const text = await res.text();
+    if (text.trim().length === 0) return null;
+    return JSON.parse(text) as T;
+}
+
+async function safeBody(res: Response): Promise<unknown> {
     try {
-        return await res.json();
+        const text = await res.text();
+        if (text.trim().length === 0) return undefined;
+        try {
+            return JSON.parse(text) as unknown;
+        } catch {
+            return text;
+        }
     } catch {
         return undefined;
     }
 }
 
 function extractCanvasMessage(body: unknown): string | undefined {
-    if (!body || typeof body !== "object") return undefined;
-    const b = body as { errors?: unknown; message?: unknown };
-    if (Array.isArray(b.errors) && b.errors.length > 0) {
-        const first = b.errors[0];
-        if (first && typeof first === "object" && "message" in first) {
-            return String((first as { message: unknown }).message);
+    return findCanvasMessage(body);
+}
+
+function findCanvasMessage(value: unknown): string | undefined {
+    if (typeof value === "string") return value.trim() || undefined;
+    if (!value || typeof value !== "object") return undefined;
+
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const message = findCanvasMessage(item);
+            if (message) return message;
         }
+        return undefined;
     }
-    if (typeof b.message === "string") return b.message;
+
+    const record = value as Record<string, unknown>;
+    for (const key of ["message", "error"]) {
+        const message = findCanvasMessage(record[key]);
+        if (message) return message;
+    }
+    for (const nested of Object.values(record)) {
+        const message = findCanvasMessage(nested);
+        if (message) return message;
+    }
     return undefined;
 }
 

@@ -1,111 +1,84 @@
 # Contributing
 
-Thanks for looking. The codebase is deliberately small and standard so
-that adding or changing a tool is a short, predictable task. This guide
-covers the full workflow for the most common change — adding a new tool
-— plus the one TypeScript quirk that catches everyone the first time.
+Canvas MCP is a v2 MCP server. Keep additions small, testable, and faithful to the Canvas REST API.
 
 ## Ground rules
 
-- Tool names: `canvas_<verb>_<noun>` in snake_case. `canvas_list_courses`,
-  `canvas_get_assignment`, `canvas_delete_rubric`. Keeps the surface
-  predictable when a client lists available tools.
-- One file per Canvas domain under `src/tools/`. Tests mirror that path
-  under `tests/tools/`.
-- Every tool gets a unit test against a mocked `CanvasClient`. No
-  exceptions — the test is how you document what endpoint the tool hits.
-- `TOOL_MANIFEST.md` is the canonical list. New tools get a row in the
-  relevant domain table; removed tools get removed from it. The tests
-  assert behaviour; the manifest documents intent.
-- Commit messages: short, present-tense, no AI attribution.
+- Tool names use `canvas_<verb>_<noun>` snake case, for example `canvas_list_courses` or `canvas_delete_rubric`.
+- Keep a Canvas domain's tools together in `src/tools/<domain>.ts`; mirror coverage in `tests/tools/<domain>.test.ts`.
+- `src/tools/index.ts` is the runtime registry. Every entry in its `allTools` array is exposed by the MCP server.
+- Treat `TOOL_MANIFEST.md` as the checked-in inventory. Update its domain list whenever the registry changes; do not add entries for planned or commented-out tools.
+- Every handler needs a mocked-client unit test that asserts the Canvas path, query/body shape, and result.
+- Use `jsonResult(value)` for JSON results. It supplies both the MCP text fallback and `structuredContent`.
 
-## Adding a new tool, end to end
+## Add a tool
 
-Say you want a tool that lists a course's external tools (the
-`/api/v1/courses/:id/external_tools` endpoint, which we don't currently
-wrap). It's a read, paginated, course-scoped — a good small example.
-
-### 1. Add the tool to its domain file
-
-Since it's course-scoped, it lives in `src/tools/courses.ts`. Open that
-file and add an entry to the `courseTools` array:
+For a course-scoped paginated read, add an entry to `src/tools/courses.ts`:
 
 ```ts
-{
-    name: "canvas_list_external_tools",
-    description:
-        "List external tools (LTI integrations) available in a course.",
-    inputSchema: z.object({
-        course_id: z.number().int().positive(),
-        search_term: z.string().optional(),
-    }),
-    handler: async (args, { canvas }) => {
-        const tools = await canvas.collectPaginated(
-            `/api/v1/courses/${args.course_id}/external_tools`,
-            {
-                per_page: 100,
-                ...(args.search_term ? { search_term: args.search_term } : {}),
-            },
-        );
-        return jsonResult(tools);
+import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
+import { jsonResult, type ToolDef } from "./types.js";
+
+export const courseTools: ToolDef[] = [
+    // existing entries
+    {
+        name: "canvas_list_external_tools",
+        description: "List LTI external tools available in a course.",
+        inputSchema: z.object({
+            course_id: canvasId,
+            search_term: z.string().optional(),
+        }),
+        handler: async (args, { canvas }) => {
+            const tools = await canvas.collectPaginated(
+                `/api/v1/courses/${args.course_id}/external_tools`,
+                {
+                    per_page: 100,
+                    ...(args.search_term ? { search_term: args.search_term } : {}),
+                },
+            );
+            return jsonResult(tools);
+        },
     },
-},
+];
 ```
 
-Notes on the shape:
+`canvasId` accepts a decimal string and safely normalizes legacy numeric input. Use it for Canvas resource IDs; do not add `z.number().int().positive()` for a Canvas ID, because Canvas IDs can be 64-bit. Do not use it for a genuinely numeric field such as `per_page`, a score, a date offset, or a byte size.
 
-- `inputSchema` is a zod object. Numeric IDs are `z.number().int().positive()`.
-- Optional fields use `z.string().optional()` (or whatever the type).
-- In the handler body, spread optional fields conditionally:
-  `...(args.foo ? { foo: args.foo } : {})`. This is mandatory — see
-  "The `exactOptionalPropertyTypes` gotcha" below.
-- Use `canvas.collectPaginated` for any Canvas endpoint that honours
-  `per_page` and returns a list. Use `canvas.get` for single-resource
-  endpoints. Use `canvas.post` / `canvas.put` / `canvas.delete` for the
-  corresponding verbs.
-- Return with `jsonResult(value)` — it stringifies and wraps the payload
-  in the MCP text-content envelope.
+Use `canvas.collectPaginated` for list endpoints that return Canvas pagination links. Use `canvas.get` for a single resource and `canvas.post`, `canvas.put`, or `canvas.delete` for the corresponding mutation. The client deliberately retries only retryable `GET` requests.
 
-### 2. Add the test
-
-Open `tests/tools/courses.test.ts` and add:
+Optional values must be conditionally spread because the project enables `exactOptionalPropertyTypes`:
 
 ```ts
-it("canvas_list_external_tools calls collectPaginated with the course's endpoint", async () => {
-    const collect = vi.fn().mockResolvedValue([
-        { id: 7, name: "Panopto" },
-    ]);
+const body = {
+    title: args.title,
+    ...(args.description ? { description: args.description } : {}),
+    ...(args.position !== undefined ? { position: args.position } : {}),
+};
+```
+
+## Test and inventory changes
+
+Add a mocked Canvas-client test alongside the domain tests:
+
+```ts
+it("canvas_list_external_tools uses the course endpoint", async () => {
+    const collect = vi.fn().mockResolvedValue([{ id: "7", name: "Panopto" }]);
     const tool = findTool("canvas_list_external_tools");
-    const result = await tool.handler(
-        { course_id: 42 },
+
+    await tool.handler(
+        { course_id: "42" },
         { canvas: fakeCanvas({ collectPaginated: collect }) },
     );
+
     expect(collect).toHaveBeenCalledWith(
         "/api/v1/courses/42/external_tools",
         expect.objectContaining({ per_page: 100 }),
     );
-    expect(result.content[0].text).toContain("Panopto");
 });
 ```
 
-The `findTool` and `fakeCanvas` helpers are already in the test file.
-Every test in every domain follows this same shape: mock the client
-method, call the handler, assert the endpoint and returned payload
-preview.
-
-### 3. Add a manifest entry
-
-Open `TOOL_MANIFEST.md`, find the `## courses` table, add a row:
-
-```markdown
-| canvas_list_external_tools | GET /api/v1/courses/:course_id/external_tools | course_id, search_term? | — | paginated |
-```
-
-Source column is 1-3 reference repos (under `reference/`) whose
-implementation most directly informed yours. If it's a fresh addition,
-leave it as `—` or put your GitHub handle.
-
-### 4. Verify
+Then add the exact tool name to the corresponding `TOOL_MANIFEST.md` domain list and run:
 
 ```bash
 pnpm test
@@ -113,83 +86,21 @@ pnpm typecheck
 pnpm build
 ```
 
-All three must pass. If typecheck complains about an optional property,
-see the gotcha below.
-
-### 5. Commit
-
-```bash
-git add src/tools/courses.ts tests/tools/courses.test.ts TOOL_MANIFEST.md
-git commit -m "add canvas_list_external_tools"
-```
-
-That's it. No router wiring, no tool registration — `src/tools/index.ts`
-picks up the new entry automatically via the domain's exported array.
-
-## The `exactOptionalPropertyTypes` gotcha
-
-The tsconfig has `exactOptionalPropertyTypes: true`. This means:
-
-```ts
-// Does NOT typecheck
-const body = {
-    name: args.name,
-    description: args.description,  // error if description is `string | undefined`
-};
-```
-
-You have to write:
-
-```ts
-const body = {
-    name: args.name,
-    ...(args.description ? { description: args.description } : {}),
-};
-```
-
-For optional numeric fields (where `0` is a valid value) use
-`!== undefined` instead of a truthiness check:
-
-```ts
-...(args.points_possible !== undefined ? { points_possible: args.points_possible } : {}),
-```
-
-Same rule applies whenever a tool passes optional fields to
-`canvas.get` / `canvas.post` etc. — query objects and body objects both
-follow this pattern. Every existing tool does it; copy the closest
-neighbour if you're unsure.
+Tool registration and MCP metadata are centralized in `src/server.ts`; an entry already present in `allTools` needs no per-tool router wiring. If a tool has unusual semantics, add an explicit `title` or MCP annotations to its `ToolDef` and cover them in a server-level test.
 
 ## Live verification
 
-`scripts/verify-tools.mjs` walks every active tool against a real
-Canvas instance. Useful when you're:
-
-- Adding a tool and want to check the real Canvas response shape.
-- Upgrading the MCP SDK or zod.
-- Pointing the server at a new institution for the first time.
+`scripts/verify-tools.mjs` is a representative, read-oriented integration smoke test. It discovers IDs from a real Canvas tenant and invokes selected non-mutating handlers; it does not claim to cover every registered tool or perform mutations.
 
 ```bash
 pnpm build
 CANVAS_API_TOKEN=... CANVAS_DOMAIN=... node scripts/verify-tools.mjs
 ```
 
-The script discovers IDs as it goes (first course, first assignment,
-etc.) and logs each call. It skips the three side-effect tools
-(`mark_module_item_read`, `mark_module_item_done`,
-`mark_conversation_read`) by default — edit the `SIDE_EFFECT` set in
-the script if you want to exercise them too.
+Use a disposable least-privilege token. Its output can contain course and user data, so do not publish it.
 
-## Trimming and forking
+## Transport changes
 
-If you want a canvas-mcp variant that only exposes a subset — say, a
-student-safe read-only build — delete or comment out the tool objects
-you don't want from the relevant domain files and rebuild. Tools are
-standalone entries in an array; removing one has no side effects on
-the others.
+Keep HTTP and protocol work in `src/http.ts` and `src/server.ts`. The public endpoint is `POST /mcp`; `GET /health` is the only health route. Modern MCP behavior is owned by the v2 SDK's `createMcpHandler`, including discovery and protocol headers. Preserve the stateless legacy mode unless a deliberate compatibility decision is documented and tested.
 
-## Found a duplicate?
-
-If you notice a tool that duplicates another (same endpoint, trivially
-different params), open an issue instead of adding a third variant.
-The original cross-reference sweep aimed to collapse these; anything
-missed should be collapsed, not multiplied.
+Do not weaken the deployment defaults while adding a tool: non-loopback listeners require `MCP_ALLOWED_HOSTS`, browser origins require explicit `MCP_ALLOWED_ORIGINS`, and request-scoped Canvas credentials require both `CANVAS_ALLOW_REQUEST_CREDENTIALS=true` and an allowed Canvas domain.

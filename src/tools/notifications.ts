@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
-// note: canvas_list_account_notifications is already defined in announcements.ts —
-// skipped here to avoid duplicate tool name registration.
+// canvas_list_account_notifications is defined in announcements.ts to avoid a
+// duplicate tool name in the consolidated registry.
 
 export const notificationTools: ToolDef[] = [
     {
@@ -36,23 +37,24 @@ export const notificationTools: ToolDef[] = [
     {
         name: "canvas_list_communication_channels",
         description:
-            "List communication channels (email, push, SMS) for the authenticated user. Useful for interpreting notification delivery preferences.",
+            "List all communication channels (email, push, SMS) for the authenticated user. Useful for interpreting notification delivery preferences.",
         inputSchema: z.object({}),
         handler: async (_args, { canvas }) => {
-            const channels = await canvas.get("/api/v1/users/self/communication_channels", {});
+            const channels = await canvas.collectPaginated("/api/v1/users/self/communication_channels", {
+                per_page: 100,
+            });
             return jsonResult(channels);
         },
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable notification dismissal and preference updates.
+    // EDUCATOR / ADMINISTRATOR TOOLS
     // ============================================================
     {
         name: "canvas_dismiss_account_notification",
         description: "Dismiss an account-level notification banner by ID. Requires educator permissions.",
         inputSchema: z.object({
-            notification_id: z.number().int().positive(),
+            notification_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const result = await canvas.delete(
@@ -66,13 +68,13 @@ export const notificationTools: ToolDef[] = [
         description:
             "Update a notification preference for a specific communication channel. Requires educator permissions.",
         inputSchema: z.object({
-            channel_id: z.number().int().positive(),
-            notification: z.string(),
+            channel_id: canvasId,
+            notification: z.string().min(1),
             frequency: z.enum(["immediately", "daily", "weekly", "never"]),
         }),
         handler: async (args, { canvas }) => {
             const result = await canvas.put(
-                `/api/v1/users/self/communication_channels/${args.channel_id}/notification_preferences/${args.notification}`,
+                `/api/v1/users/self/communication_channels/${args.channel_id}/notification_preferences/${encodeURIComponent(args.notification)}`,
                 { notification_preferences: { frequency: args.frequency } },
             );
             return jsonResult(result);

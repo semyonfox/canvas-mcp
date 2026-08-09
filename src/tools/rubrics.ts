@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
@@ -7,7 +8,7 @@ export const rubricTools: ToolDef[] = [
         name: "canvas_list_rubrics",
         description: "List rubrics for a course. Optionally include associations or assessments.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
             include: z.array(z.string()).optional(),
         }),
         handler: async (args, { canvas }) => {
@@ -28,8 +29,8 @@ export const rubricTools: ToolDef[] = [
             "include[] supports `assessments`, `graded_assessments`, `peer_assessments`. " +
             "style can be `full` or `comments_only`.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            rubric_id: z.number().int().positive(),
+            course_id: canvasId,
+            rubric_id: canvasId,
             include: z.array(z.string()).optional(),
             style: z.enum(["full", "comments_only"]).optional(),
         }),
@@ -50,8 +51,8 @@ export const rubricTools: ToolDef[] = [
             "Fetch a rubric with all assessments included and return the raw data for " +
             "client-side statistics (point distributions per criterion).",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            rubric_id: z.number().int().positive(),
+            course_id: canvasId,
+            rubric_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const rubric = await canvas.get(
@@ -66,8 +67,8 @@ export const rubricTools: ToolDef[] = [
         description:
             "Get the authenticated student's rubric assessment for an assignment submission.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            assignment_id: z.number().int().positive(),
+            course_id: canvasId,
+            assignment_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const submission = await canvas.get(
@@ -79,15 +80,13 @@ export const rubricTools: ToolDef[] = [
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable rubric creation, updates, deletion,
-    // association management, and rubric-based grading.
+    // EDUCATOR / ADMINISTRATOR TOOLS
     // ============================================================
     {
         name: "canvas_create_rubric",
         description: "Create a rubric in a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
             title: z.string(),
             free_form_criterion_comments: z.boolean().optional(),
             criteria: z.array(z.object({
@@ -108,8 +107,8 @@ export const rubricTools: ToolDef[] = [
         name: "canvas_update_rubric",
         description: "Update a rubric in a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            rubric_id: z.number().int().positive(),
+            course_id: canvasId,
+            rubric_id: canvasId,
             title: z.string().optional(),
             free_form_criterion_comments: z.boolean().optional(),
         }),
@@ -126,8 +125,8 @@ export const rubricTools: ToolDef[] = [
         name: "canvas_delete_rubric",
         description: "Delete a rubric from a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            rubric_id: z.number().int().positive(),
+            course_id: canvasId,
+            rubric_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const result = await canvas.delete(
@@ -140,9 +139,9 @@ export const rubricTools: ToolDef[] = [
         name: "canvas_associate_rubric",
         description: "Associate a rubric with an assignment in a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            rubric_id: z.number().int().positive(),
-            association_id: z.number().int().positive(),
+            course_id: canvasId,
+            rubric_id: canvasId,
+            association_id: canvasId,
             association_type: z.enum(["Assignment", "Course", "Account"]),
             purpose: z.enum(["grading", "bookmark"]).optional(),
         }),
@@ -159,10 +158,10 @@ export const rubricTools: ToolDef[] = [
         name: "canvas_grade_with_rubric",
         description: "Grade a student submission using a rubric. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            assignment_id: z.number().int().positive(),
-            user_id: z.number().int().positive(),
-            rubric_assessment: z.record(z.object({
+            course_id: canvasId,
+            assignment_id: canvasId,
+            user_id: canvasId,
+            rubric_assessment: z.record(z.string(), z.object({
                 points: z.number().optional(),
                 comments: z.string().optional(),
             })),

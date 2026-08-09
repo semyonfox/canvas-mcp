@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
@@ -8,7 +9,7 @@ export const gradeTools: ToolDef[] = [
         description:
             "Get the authenticated student's grades across courses. Returns enrollment objects that include current_score, final_score, current_grade, final_grade, and grading-period fields. Optional filters: course_id (single course), state (active|completed|invited — defaults to active+invited), limit (cap result count). Use this for any 'what are my grades' question.",
         inputSchema: z.object({
-            course_id: z.number().int().positive().optional(),
+            course_id: canvasId.optional(),
             state: z.array(z.enum(["active", "invited", "completed", "inactive"])).optional(),
             limit: z.number().int().positive().optional(),
         }),
@@ -30,8 +31,8 @@ export const gradeTools: ToolDef[] = [
         description:
             "Get grading feedback for a specific assignment submission, including submission comments and rubric assessment.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            assignment_id: z.number().int().positive(),
+            course_id: canvasId,
+            assignment_id: canvasId,
             include: z.array(z.string()).optional(),
         }),
         handler: async (args, { canvas }) => {
@@ -49,7 +50,7 @@ export const gradeTools: ToolDef[] = [
         description:
             "Get grading standards (letter-grade thresholds) for a course.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const standards = await canvas.collectPaginated(
@@ -61,17 +62,15 @@ export const gradeTools: ToolDef[] = [
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable grade submission, bulk status views,
-    // and comprehensive grade + submission roll-ups.
+    // ADMIN / EDUCATOR TOOLS
     // ============================================================
     {
         name: "canvas_submit_grade",
         description: "Grade a student's submission for an assignment. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            assignment_id: z.number().int().positive(),
-            user_id: z.number().int().positive(),
+            course_id: canvasId,
+            assignment_id: canvasId,
+            user_id: canvasId,
             posted_grade: z.string().optional(),
             excuse: z.boolean().optional(),
         }),
@@ -92,7 +91,7 @@ export const gradeTools: ToolDef[] = [
         name: "canvas_get_all_students_status",
         description: "List all student submissions for a course across assignments. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
             workflow_state: z.enum(["submitted", "unsubmitted", "graded", "pending_review"]).optional(),
             include: z.array(z.string()).optional(),
         }),
@@ -113,20 +112,24 @@ export const gradeTools: ToolDef[] = [
         name: "canvas_get_comprehensive_status",
         description: "Composite grade + submission roll-up for all students in a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
-            const [enrollments, submissions] = await Promise.all([
-                canvas.collectPaginated(`/api/v1/courses/${args.course_id}/enrollments`, {
+            const enrollments = await canvas.collectPaginated(
+                `/api/v1/courses/${args.course_id}/enrollments`,
+                {
                     per_page: 100,
                     type: ["StudentEnrollment"],
                     include: ["grades"],
-                }),
-                canvas.collectPaginated(`/api/v1/courses/${args.course_id}/students/submissions`, {
+                },
+            );
+            const submissions = await canvas.collectPaginated(
+                `/api/v1/courses/${args.course_id}/students/submissions`,
+                {
                     per_page: 100,
                     student_ids: ["all"],
-                }),
-            ]);
+                },
+            );
             return jsonResult({ enrollments, submissions });
         },
     },

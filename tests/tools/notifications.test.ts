@@ -51,14 +51,17 @@ describe("notification tools", () => {
         expect(result.content[0].text).toContain("Announcement");
     });
 
-    it("canvas_list_communication_channels calls get for channels endpoint", async () => {
-        const get = vi.fn().mockResolvedValue([{ id: 1, type: "email", address: "student@example.com" }]);
+    it("canvas_list_communication_channels paginates the channels endpoint", async () => {
+        const collect = vi.fn().mockResolvedValue([{ id: 1, type: "email", address: "student@example.com" }]);
         const tool = findTool("canvas_list_communication_channels");
         const result = await tool.handler(
             {},
-            { canvas: fakeCanvas({ get }) },
+            { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
-        expect(get).toHaveBeenCalledWith("/api/v1/users/self/communication_channels", {});
+        expect(collect).toHaveBeenCalledWith(
+            "/api/v1/users/self/communication_channels",
+            { per_page: 100 },
+        );
         expect(result.content[0].text).toContain("student@example.com");
     });
 

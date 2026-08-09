@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
@@ -24,7 +25,7 @@ export const courseTools: ToolDef[] = [
         name: "canvas_get_course",
         description: "Get full details for a single course by ID.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
             include: z.array(z.string()).optional(),
         }),
         handler: async (args, { canvas }) => {
@@ -38,7 +39,7 @@ export const courseTools: ToolDef[] = [
         name: "canvas_list_sections",
         description: "List sections for a course.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const sections = await canvas.collectPaginated(`/api/v1/courses/${args.course_id}/sections`, {
@@ -49,14 +50,13 @@ export const courseTools: ToolDef[] = [
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable course creation, updates, and deletion.
+    // EDUCATOR / ADMINISTRATOR TOOLS
     // ============================================================
     {
         name: "canvas_create_course",
         description: "Create a new course in an account. Requires admin permissions.",
         inputSchema: z.object({
-            account_id: z.number().int().positive(),
+            account_id: canvasId,
             name: z.string(),
             course_code: z.string().optional(),
         }),

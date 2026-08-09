@@ -50,37 +50,40 @@ describe("calendar tools", () => {
         );
     });
 
-    it("canvas_list_upcoming_events calls get for upcoming events", async () => {
-        const get = vi.fn().mockResolvedValue([{ id: 2, title: "Quiz due", type: "assignment" }]);
+    it("canvas_list_upcoming_events paginates Canvas's upcoming events", async () => {
+        const collect = vi.fn().mockResolvedValue([{ id: 2, title: "Quiz due", type: "assignment" }]);
         const tool = findTool("canvas_list_upcoming_events");
         const result = await tool.handler(
             {},
-            { canvas: fakeCanvas({ get }) },
+            { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
-        expect(get).toHaveBeenCalledWith("/api/v1/users/self/upcoming_events");
+        expect(collect).toHaveBeenCalledWith(
+            "/api/v1/users/self/upcoming_events",
+            { per_page: 100 },
+        );
         expect(result.content[0].text).toContain("Quiz due");
     });
 
     it("canvas_list_upcoming_events filters by type client-side", async () => {
-        const get = vi.fn().mockResolvedValue([
+        const collect = vi.fn().mockResolvedValue([
             { id: 1, title: "Quiz", type: "assignment" },
             { id: 2, title: "Office hours", type: "event" },
         ]);
         const tool = findTool("canvas_list_upcoming_events");
-        const result = await tool.handler({ type: "event" }, { canvas: fakeCanvas({ get }) });
+        const result = await tool.handler({ type: "event" }, { canvas: fakeCanvas({ collectPaginated: collect }) });
         const parsed = JSON.parse(result.content[0].text) as Array<{ type: string }>;
         expect(parsed).toHaveLength(1);
         expect(parsed[0].type).toBe("event");
     });
 
     it("canvas_list_upcoming_events applies limit after filtering", async () => {
-        const get = vi.fn().mockResolvedValue([
+        const collect = vi.fn().mockResolvedValue([
             { id: 1, type: "assignment" },
             { id: 2, type: "assignment" },
             { id: 3, type: "assignment" },
         ]);
         const tool = findTool("canvas_list_upcoming_events");
-        const result = await tool.handler({ limit: 2 }, { canvas: fakeCanvas({ get }) });
+        const result = await tool.handler({ limit: 2 }, { canvas: fakeCanvas({ collectPaginated: collect }) });
         const parsed = JSON.parse(result.content[0].text) as unknown[];
         expect(parsed).toHaveLength(2);
     });
@@ -120,14 +123,14 @@ describe("calendar tools", () => {
         );
     });
 
-    it("canvas_list_todo_items calls get for todo list", async () => {
-        const get = vi.fn().mockResolvedValue([{ type: "submitting", assignment: { name: "Essay" } }]);
+    it("canvas_list_todo_items paginates the todo list", async () => {
+        const collect = vi.fn().mockResolvedValue([{ type: "submitting", assignment: { name: "Essay" } }]);
         const tool = findTool("canvas_list_todo_items");
         const result = await tool.handler(
             {},
-            { canvas: fakeCanvas({ get }) },
+            { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
-        expect(get).toHaveBeenCalledWith("/api/v1/users/self/todo", {});
+        expect(collect).toHaveBeenCalledWith("/api/v1/users/self/todo", { per_page: 100 });
         expect(result.content[0].text).toContain("Essay");
     });
 
@@ -215,6 +218,19 @@ describe("calendar tools", () => {
         );
         expect(del).toHaveBeenCalledWith("/api/v1/calendar_events/42");
         expect(result.content[0].text).toContain("deleted");
+    });
+
+    it("canvas_delete_calendar_event forwards cancellation reason and recurring scope", async () => {
+        const del = vi.fn().mockResolvedValue({ deleted: true });
+        const tool = findTool("canvas_delete_calendar_event");
+        await tool.handler(
+            { event_id: 42, cancel_reason: "Cancelled", which: "following" },
+            { canvas: fakeCanvas({ delete: del }) },
+        );
+        expect(del).toHaveBeenCalledWith(
+            "/api/v1/calendar_events/42",
+            { cancel_reason: "Cancelled", which: "following" },
+        );
     });
 
     it("canvas_create_planner_note posts to planner_notes", async () => {

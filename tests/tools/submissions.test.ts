@@ -27,7 +27,7 @@ describe("submission tools", () => {
         expect(result.content[0].text).toContain("graded");
     });
 
-    it("canvas_list_my_submissions calls collectPaginated with student_ids=self", async () => {
+    it("canvas_list_my_submissions omits student_ids so Canvas defaults to the caller", async () => {
         const collect = vi.fn().mockResolvedValue([{ id: 202, assignment_id: 10, workflow_state: "submitted" }]);
         const tool = findTool("canvas_list_my_submissions");
         const result = await tool.handler(
@@ -36,9 +36,22 @@ describe("submission tools", () => {
         );
         expect(collect).toHaveBeenCalledWith(
             "/api/v1/courses/5/students/submissions",
-            expect.objectContaining({ per_page: 100, student_ids: ["self"] }),
+            { per_page: 100 },
         );
         expect(result.content[0].text).toContain("submitted");
+    });
+
+    it("canvas_list_my_submissions forwards permitted explicit student filters", async () => {
+        const collect = vi.fn().mockResolvedValue([]);
+        const tool = findTool("canvas_list_my_submissions");
+        await tool.handler(
+            { course_id: 5, student_ids: ["all"], workflow_state: "graded" },
+            { canvas: fakeCanvas({ collectPaginated: collect }) },
+        );
+        expect(collect).toHaveBeenCalledWith(
+            "/api/v1/courses/5/students/submissions",
+            expect.objectContaining({ student_ids: ["all"], workflow_state: "graded" }),
+        );
     });
 
     it("canvas_get_submission_comments wraps include submission_comments", async () => {
@@ -55,17 +68,17 @@ describe("submission tools", () => {
         expect(result.content[0].text).toContain("Nice work");
     });
 
-    it("canvas_list_peer_reviews_todo calls get on todo and returns items", async () => {
-        const get = vi.fn().mockResolvedValue([
+    it("canvas_list_peer_reviews_todo paginates todo items and returns reviewing entries", async () => {
+        const collect = vi.fn().mockResolvedValue([
             { type: "reviewing", assignment: { id: 7, name: "Lab Report" } },
             { type: "submitting", assignment: { id: 8, name: "Essay" } },
         ]);
         const tool = findTool("canvas_list_peer_reviews_todo");
         const result = await tool.handler(
             {},
-            { canvas: fakeCanvas({ get }) },
+            { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
-        expect(get).toHaveBeenCalledWith("/api/v1/users/self/todo", {});
+        expect(collect).toHaveBeenCalledWith("/api/v1/users/self/todo", { per_page: 100 });
         expect(result.content[0].text).toContain("reviewing");
     });
 
@@ -127,6 +140,7 @@ describe("submission tools", () => {
         expect(post).not.toHaveBeenCalled();
         expect(result.content[0].text).toContain("multi-step flow");
         expect(result.content[0].text).toContain("file_ids");
+        expect(result.isError).toBe(true);
     });
 
     it("canvas_submit_assignment returns stub for media_recording", async () => {
@@ -139,6 +153,7 @@ describe("submission tools", () => {
         expect(post).not.toHaveBeenCalled();
         expect(result.content[0].text).toContain("multi-step flow");
         expect(result.content[0].text).toContain("Kaltura");
+        expect(result.isError).toBe(true);
     });
 
     it("canvas_grade_submission puts grade to submission endpoint", async () => {
