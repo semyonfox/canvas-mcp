@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
@@ -7,7 +8,7 @@ export const quizTools: ToolDef[] = [
         name: "canvas_list_quizzes",
         description: "List quizzes for a course. Optionally filter by search_term.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
             search_term: z.string().optional(),
         }),
         handler: async (args, { canvas }) => {
@@ -25,8 +26,8 @@ export const quizTools: ToolDef[] = [
         name: "canvas_get_quiz",
         description: "Get details for a single quiz by course and quiz ID.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const quiz = await canvas.get(
@@ -38,47 +39,55 @@ export const quizTools: ToolDef[] = [
     },
     {
         name: "canvas_list_my_quiz_submissions",
+        title: "Canvas: List Quiz Submissions",
         description:
-            "List submissions for a quiz. Filtered to the authenticated student. Includes score and attempt data.",
+            "List quiz submissions visible to the authenticated user. Students receive only their own submissions; users who can manage grades may receive submissions from multiple users.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
+            include: z.array(z.enum(["submission", "quiz", "user"])).optional(),
         }),
         handler: async (args, { canvas }) => {
-            const submissions = await canvas.collectPaginated(
+            const response = await canvas.get<{ quiz_submissions?: unknown[] } | unknown[]>(
                 `/api/v1/courses/${args.course_id}/quizzes/${args.quiz_id}/submissions`,
-                { per_page: 100 },
+                {
+                    ...(args.include ? { include: args.include } : {}),
+                },
             );
+            const submissions = Array.isArray(response)
+                ? response
+                : response?.quiz_submissions ?? [];
             return jsonResult(submissions);
         },
     },
     {
         name: "canvas_get_my_quiz_submission",
         description:
-            "Get the authenticated student's latest submission for a quiz, including score and attempts.",
+            "Get the authenticated user's current quiz submission, including score and attempt data when available.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
+            include: z.array(z.enum(["submission", "quiz", "user"])).optional(),
         }),
         handler: async (args, { canvas }) => {
             const submission = await canvas.get(
-                `/api/v1/courses/${args.course_id}/quizzes/${args.quiz_id}/submissions/self`,
-                {},
+                `/api/v1/courses/${args.course_id}/quizzes/${args.quiz_id}/submission`,
+                {
+                    ...(args.include ? { include: args.include } : {}),
+                },
             );
             return jsonResult(submission);
         },
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable quiz authoring, question management,
-    // question groups, and starting quiz attempts.
+    // EDUCATOR / ADMINISTRATOR TOOLS
     // ============================================================
     {
         name: "canvas_create_quiz",
         description: "Create a quiz in a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
+            course_id: canvasId,
             title: z.string(),
             quiz_type: z.enum(["practice_quiz", "assignment", "graded_survey", "survey"]).optional(),
             time_limit: z.number().int().positive().optional(),
@@ -103,8 +112,8 @@ export const quizTools: ToolDef[] = [
         name: "canvas_update_quiz",
         description: "Update a quiz in a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
             title: z.string().optional(),
             quiz_type: z.enum(["practice_quiz", "assignment", "graded_survey", "survey"]).optional(),
             time_limit: z.number().int().positive().optional(),
@@ -132,8 +141,8 @@ export const quizTools: ToolDef[] = [
         name: "canvas_delete_quiz",
         description: "Delete a quiz from a course. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const result = await canvas.delete(
@@ -146,8 +155,8 @@ export const quizTools: ToolDef[] = [
         name: "canvas_list_quiz_questions",
         description: "List questions for a quiz. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const questions = await canvas.collectPaginated(
@@ -161,8 +170,8 @@ export const quizTools: ToolDef[] = [
         name: "canvas_create_quiz_question",
         description: "Create a question in a quiz. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
             question_name: z.string().optional(),
             question_text: z.string(),
             question_type: z.string(),
@@ -188,9 +197,9 @@ export const quizTools: ToolDef[] = [
         name: "canvas_update_quiz_question",
         description: "Update a question in a quiz. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
-            question_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
+            question_id: canvasId,
             question_name: z.string().optional(),
             question_text: z.string().optional(),
             points_possible: z.number().optional(),
@@ -214,9 +223,9 @@ export const quizTools: ToolDef[] = [
         name: "canvas_delete_quiz_question",
         description: "Delete a question from a quiz. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
-            question_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
+            question_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const result = await canvas.delete(
@@ -229,8 +238,8 @@ export const quizTools: ToolDef[] = [
         name: "canvas_list_quiz_question_groups",
         description: "List question groups for a quiz. Requires educator permissions.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const groups = await canvas.collectPaginated(
@@ -242,15 +251,21 @@ export const quizTools: ToolDef[] = [
     },
     {
         name: "canvas_start_quiz_attempt",
-        description: "Start a new submission attempt for a quiz. Requires admin permissions.",
+        description: "Start a quiz-taking session. Requires permission to take the quiz.",
         inputSchema: z.object({
-            course_id: z.number().int().positive(),
-            quiz_id: z.number().int().positive(),
+            course_id: canvasId,
+            quiz_id: canvasId,
+            access_code: z.string().optional(),
+            preview: z.boolean().optional(),
         }),
         handler: async (args, { canvas }) => {
-            const submission = await canvas.post(
-                `/api/v1/courses/${args.course_id}/quizzes/${args.quiz_id}/submissions`,
-            );
+            const options = {
+                ...(args.access_code !== undefined ? { access_code: args.access_code } : {}),
+                ...(args.preview !== undefined ? { preview: args.preview } : {}),
+            };
+            const submission = Object.keys(options).length > 0
+                ? await canvas.post(`/api/v1/courses/${args.course_id}/quizzes/${args.quiz_id}/submissions`, options)
+                : await canvas.post(`/api/v1/courses/${args.course_id}/quizzes/${args.quiz_id}/submissions`);
             return jsonResult(submission);
         },
     },

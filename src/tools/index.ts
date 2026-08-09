@@ -14,6 +14,7 @@ import { notificationTools } from "./notifications.js";
 import { profileTools } from "./profile.js";
 import { quizTools } from "./quizzes.js";
 import { rubricTools } from "./rubrics.js";
+import { progressTools } from "./progress.js";
 
 export const allTools: ToolDef[] = [
     ...courseTools,
@@ -31,4 +32,5 @@ export const allTools: ToolDef[] = [
     ...profileTools,
     ...quizTools,
     ...rubricTools,
+    ...progressTools,
 ];

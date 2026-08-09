@@ -55,16 +55,16 @@ describe("assignment tools", () => {
         expect(result.content[0].text).toContain("Homework");
     });
 
-    it("canvas_list_missing_assignments calls get on missing_submissions", async () => {
-        const get = vi.fn().mockResolvedValue([{ id: 55, name: "Lab Report" }]);
+    it("canvas_list_missing_assignments paginates missing_submissions", async () => {
+        const collect = vi.fn().mockResolvedValue([{ id: 55, name: "Lab Report" }]);
         const tool = findTool("canvas_list_missing_assignments");
         const result = await tool.handler(
             {},
-            { canvas: fakeCanvas({ get }) },
+            { canvas: fakeCanvas({ collectPaginated: collect }) },
         );
-        expect(get).toHaveBeenCalledWith(
+        expect(collect).toHaveBeenCalledWith(
             "/api/v1/users/self/missing_submissions",
-            expect.any(Object),
+            expect.objectContaining({ per_page: 100 }),
         );
         expect(result.content[0].text).toContain("Lab Report");
     });
@@ -124,31 +124,58 @@ describe("assignment tools", () => {
         expect(result.content[0].text).toContain("Projects");
     });
 
-    it("canvas_bulk_update_assignment_dates puts to bulk_update endpoint", async () => {
+    it("canvas_bulk_update_assignment_dates sends Canvas all_dates structures", async () => {
         const put = vi.fn().mockResolvedValue({ progress: "queued" });
         const tool = findTool("canvas_bulk_update_assignment_dates");
-        const dates = [{ id: 10, due_at: "2026-05-01T12:00:00Z" }];
+        const dates = [{
+            id: "10",
+            all_dates: [{
+                id: "20",
+                due_at: "2026-05-01T12:00:00Z",
+                unlock_at: null,
+            }],
+        }];
         const result = await tool.handler(
-            { course_id: 5, assignment_dates: dates },
+            tool.inputSchema.parse({ course_id: 5, assignment_dates: dates }),
             { canvas: fakeCanvas({ put }) },
         );
         expect(put).toHaveBeenCalledWith(
             "/api/v1/courses/5/assignments/bulk_update",
-            dates,
+            [{
+                id: "10",
+                all_dates: [{
+                id: "20",
+                due_at: "2026-05-01T12:00:00Z",
+                unlock_at: null,
+                }],
+            }],
         );
         expect(result.content[0].text).toContain("queued");
     });
 
-    it("canvas_assign_peer_review posts to peer_reviews endpoint", async () => {
+    it("canvas_bulk_update_assignment_dates rejects a malformed base-and-override date", () => {
+        const tool = findTool("canvas_bulk_update_assignment_dates");
+        expect(
+            tool.inputSchema.safeParse({
+                course_id: "5",
+                assignment_dates: [{
+                    id: "10",
+                    all_dates: [{ id: "20", base: true }],
+                }],
+            }).success,
+        ).toBe(false);
+    });
+
+    it("canvas_assign_peer_review posts to a submission's peer_reviews endpoint", async () => {
         const post = vi.fn().mockResolvedValue({ id: 42, workflow_state: "assigned" });
         const tool = findTool("canvas_assign_peer_review");
         const result = await tool.handler(
-            { course_id: 5, assignment_id: 20, reviewer_id: 101, reviewee_id: 102 },
+            { course_id: 5, assignment_id: 20, submission_id: 102, user_id: 101 },
             { canvas: fakeCanvas({ post }) },
         );
         expect(post).toHaveBeenCalledWith(
-            "/api/v1/courses/5/assignments/20/peer_reviews",
-            expect.objectContaining({ user_id: 101, reviewee_id: 102 }),
+            "/api/v1/courses/5/assignments/20/submissions/102/peer_reviews",
+            { user_id: 101 },
         );
         expect(result.content[0].text).toContain("assigned");
     });

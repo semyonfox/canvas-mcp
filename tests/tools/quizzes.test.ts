@@ -54,21 +54,34 @@ describe("quiz tools", () => {
         expect(result.content[0].text).toContain("Final Exam");
     });
 
-    it("canvas_list_my_quiz_submissions calls collectPaginated", async () => {
-        const collect = vi.fn().mockResolvedValue([{ id: 1, score: 95 }]);
+    it("canvas_list_my_quiz_submissions reads Canvas's quiz_submissions response wrapper", async () => {
+        const get = vi.fn().mockResolvedValue({ quiz_submissions: [{ id: 1, score: 95 }] });
         const tool = findTool("canvas_list_my_quiz_submissions");
         const result = await tool.handler(
             { course_id: 10, quiz_id: 5 },
-            { canvas: fakeCanvas({ collectPaginated: collect }) },
+            { canvas: fakeCanvas({ get }) },
         );
-        expect(collect).toHaveBeenCalledWith(
+        expect(get).toHaveBeenCalledWith(
             "/api/v1/courses/10/quizzes/5/submissions",
-            expect.objectContaining({ per_page: 100 }),
+            {},
         );
         expect(result.content[0].text).toContain("95");
     });
 
-    it("canvas_get_my_quiz_submission fetches the self submission", async () => {
+    it("canvas_list_my_quiz_submissions passes supported include associations", async () => {
+        const get = vi.fn().mockResolvedValue({ quiz_submissions: [] });
+        const tool = findTool("canvas_list_my_quiz_submissions");
+        await tool.handler(
+            { course_id: 10, quiz_id: 5, include: ["submission", "user"] },
+            { canvas: fakeCanvas({ get }) },
+        );
+        expect(get).toHaveBeenCalledWith(
+            "/api/v1/courses/10/quizzes/5/submissions",
+            { include: ["submission", "user"] },
+        );
+    });
+
+    it("canvas_get_my_quiz_submission uses Canvas's singular current-user endpoint", async () => {
         const get = vi.fn().mockResolvedValue({ id: 1, score: 88, attempts_allowed: 3 });
         const tool = findTool("canvas_get_my_quiz_submission");
         const result = await tool.handler(
@@ -76,8 +89,8 @@ describe("quiz tools", () => {
             { canvas: fakeCanvas({ get }) },
         );
         expect(get).toHaveBeenCalledWith(
-            "/api/v1/courses/10/quizzes/5/submissions/self",
-            expect.any(Object),
+            "/api/v1/courses/10/quizzes/5/submission",
+            {},
         );
         expect(result.content[0].text).toContain("88");
     });
@@ -250,5 +263,18 @@ describe("quiz tools", () => {
             "/api/v1/courses/10/quizzes/5/submissions",
         );
         expect(result.content[0].text).toContain("99");
+    });
+
+    it("canvas_start_quiz_attempt forwards an access code and preview flag", async () => {
+        const post = vi.fn().mockResolvedValue({ id: 100, preview: true });
+        const tool = findTool("canvas_start_quiz_attempt");
+        await tool.handler(
+            { course_id: 10, quiz_id: 5, access_code: "quiz-secret", preview: true },
+            { canvas: fakeCanvas({ post }) },
+        );
+        expect(post).toHaveBeenCalledWith(
+            "/api/v1/courses/10/quizzes/5/submissions",
+            { access_code: "quiz-secret", preview: true },
+        );
     });
 });

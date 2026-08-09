@@ -113,23 +113,22 @@ describe("file tools", () => {
 
     // admin / educator tools
 
-    it("canvas_upload_file is registered and returns stub guidance without crashing", async () => {
+    it("canvas_upload_file is registered but returns a clear unsupported-operation error", async () => {
         const tool = findTool("canvas_upload_file");
         // no canvas call expected — the handler is a pure stub
         const result = await tool.handler(
             { course_id: 10, name: "lecture.pdf", size: 1024 },
             { canvas: fakeCanvas({}) },
         );
-        expect(result.isError).toBeFalsy();
+        expect(result.isError).toBe(true);
         const body = JSON.parse(result.content[0].text);
-        expect(body.stub).toBe(true);
-        expect(body.message).toContain("3-step flow");
-        expect(body.message).toContain("canvas.instructure.com/doc/api/file.file_uploads.html");
+        expect(body.error).toContain("not implemented");
+        expect(body.guidance).toContain("multipart");
         expect(body.requested_params.course_id).toBe(10);
         expect(body.requested_params.name).toBe("lecture.pdf");
     });
 
-    it("canvas_upload_file stub includes optional params when provided", async () => {
+    it("canvas_upload_file error includes optional requested parameters", async () => {
         const tool = findTool("canvas_upload_file");
         const result = await tool.handler(
             {
@@ -159,7 +158,7 @@ describe("file tools", () => {
         expect(result.content[0].text).toContain("deleted");
     });
 
-    it("canvas_download_file_to_disk returns download url and does not throw", async () => {
+    it("canvas_download_file_to_disk reports that the requested disk write is unsupported", async () => {
         const get = vi.fn().mockResolvedValue({ id: 55, url: "https://canvas.example.com/files/55/download?token=xyz" });
         const tool = findTool("canvas_download_file_to_disk");
         const result = await tool.handler(
@@ -168,8 +167,9 @@ describe("file tools", () => {
         );
         expect(get).toHaveBeenCalledWith("/api/v1/files/55", {});
         const body = JSON.parse(result.content[0].text);
+        expect(result.isError).toBe(true);
         expect(body.url).toContain("https://canvas.example.com/files/55/download");
-        expect(body.note).toContain("not supported");
+        expect(body.error).toContain("not supported");
         expect(body.destination_path_ignored).toBe("/tmp/file.pdf");
     });
 });

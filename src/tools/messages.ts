@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
@@ -24,13 +25,15 @@ export const messageTools: ToolDef[] = [
     },
     {
         name: "canvas_get_conversation",
-        description: "Get full details for a single conversation by ID.",
+        description:
+            "Get full details for a conversation without marking it read. Canvas otherwise marks a fetched conversation read by default.",
         inputSchema: z.object({
-            conversation_id: z.number().int().positive(),
+            conversation_id: canvasId,
             include: z.array(z.string()).optional(),
         }),
         handler: async (args, { canvas }) => {
             const conversation = await canvas.get(`/api/v1/conversations/${args.conversation_id}`, {
+                auto_mark_as_read: false,
                 ...(args.include ? { include: args.include } : {}),
             });
             return jsonResult(conversation);
@@ -50,7 +53,7 @@ export const messageTools: ToolDef[] = [
         description:
             "Mark a conversation as read (or set another workflow_state). Safe self-state toggle only.",
         inputSchema: z.object({
-            conversation_id: z.number().int().positive(),
+            conversation_id: canvasId,
             workflow_state: z.enum(["read", "unread", "archived"]).optional(),
         }),
         handler: async (args, { canvas }) => {
@@ -63,8 +66,7 @@ export const messageTools: ToolDef[] = [
     },
 
     // ============================================================
-    // ADMIN / EDUCATOR TOOLS — commented out for student-only build.
-    // Uncomment to enable sending, replying, bulk messaging, and deletion.
+    // EDUCATOR / ADMINISTRATOR TOOLS
     // ============================================================
     {
         name: "canvas_send_conversation",
@@ -89,7 +91,7 @@ export const messageTools: ToolDef[] = [
         name: "canvas_reply_to_conversation",
         description: "Add a reply message to an existing conversation. Requires educator permissions.",
         inputSchema: z.object({
-            conversation_id: z.number().int().positive(),
+            conversation_id: canvasId,
             body: z.string(),
             recipients: z.array(z.string()).optional(),
         }),
@@ -129,7 +131,7 @@ export const messageTools: ToolDef[] = [
         name: "canvas_delete_conversation",
         description: "Delete a conversation by ID. Requires educator permissions.",
         inputSchema: z.object({
-            conversation_id: z.number().int().positive(),
+            conversation_id: canvasId,
         }),
         handler: async (args, { canvas }) => {
             const result = await canvas.delete(`/api/v1/conversations/${args.conversation_id}`);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Live verification against Canvas. Calls each active tool's handler with
-// sensible arguments discovered from prior calls. Logs to stdout (tee to file).
+// Representative, read-oriented verification against Canvas. Calls selected
+// handlers with sensible arguments discovered from prior calls. Logs to stdout
+// (tee to file); it intentionally does not cover every registered tool.
 //
 // Usage: CANVAS_API_TOKEN=... CANVAS_DOMAIN=... node scripts/verify-tools.mjs
 
@@ -17,7 +18,7 @@ if (!token || !domain) {
 const canvas = new CanvasClient({ domain, token });
 const ctx = { canvas };
 
-// side-effect tools — skip by default
+// Known self-state changes that this script may discover but must not perform.
 const SIDE_EFFECT = new Set([
     "canvas_mark_module_item_read",
     "canvas_mark_module_item_done",
@@ -70,7 +71,6 @@ const courses = await run("canvas_list_courses", { enrollment_state: "active" })
 const courseId = pickFirst(courses, "id");
 console.log(`\n[discovered] courseId = ${courseId}`);
 
-await run("canvas_get_my_profile", {});
 await run("canvas_get_my_settings", {});
 await run("canvas_get_my_grades", {});
 await run("canvas_list_missing_assignments", {});
@@ -139,11 +139,11 @@ if (!courseId) {
     console.log(`\n[discovered] pageUrl = ${pageUrl}`);
 
     if (pageUrl) {
-        await run("canvas_get_page", { course_id: courseId, page_url_or_id: pageUrl });
-        const revs = await run("canvas_list_page_revisions", { course_id: courseId, page_url_or_id: pageUrl });
+        await run("canvas_get_page", { course_id: courseId, page_url: pageUrl });
+        const revs = await run("canvas_list_page_revisions", { course_id: courseId, page_url: pageUrl });
         const revisionId = pickFirst(revs, "revision_id");
         if (revisionId) {
-            await run("canvas_get_page_revision", { course_id: courseId, page_url_or_id: pageUrl, revision_id: revisionId });
+            await run("canvas_get_page_revision", { course_id: courseId, page_url: pageUrl, revision_id: revisionId });
         } else {
             console.log("\n=== canvas_get_page_revision ===\nSKIPPED (no revisions on page)");
             results.skipped++;
@@ -221,4 +221,4 @@ if (convoId) {
 // side-effect tools: note explicitly
 for (const name of SIDE_EFFECT) await run(name, {});
 
-console.log(`\n\n# Summary\nOK: ${results.ok}\nFAIL: ${results.err}\nSKIPPED: ${results.skipped}\ntotal invocations: ${results.ok + results.err + results.skipped}`);
+console.log(`\n\n# Summary\nOK: ${results.ok}\nFAIL: ${results.err}\nSKIPPED: ${results.skipped}\nrepresentative invocations: ${results.ok + results.err + results.skipped}`);
