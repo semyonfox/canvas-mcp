@@ -19,7 +19,7 @@
     "model-context-protocol",
     "typescript"
   ],
-  "packageManager": "pnpm@10.33.2",
+  "packageManager": "pnpm@11.22.0",
   "bin": {
     "canvas-mcp": "dist/index.js"
   },
@@ -42,13 +42,6 @@
   },
   "engines": {
     "node": ">=22"
-  },
-  "pnpm": {
-    "overrides": {
-      "hono": "4.12.25",
-      "qs": "6.15.2",
-      "vite": "8.0.16"
-    }
   },
   "dependencies": {
     "@modelcontextprotocol/node": "^2.0.0",

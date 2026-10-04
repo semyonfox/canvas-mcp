@@ -35,4 +35,30 @@ describe("CanvasClient.getPaginated", () => {
     const all = await client.collectPaginated<string>("/api/v1/y");
     expect(all).toEqual(["a", "b"]);
   });
+
+  it("rejects a non-array page with a clear upstream error", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "unexpected shape" }), { status: 200 }),
+    );
+    const client = new CanvasClient({ domain: "x.instructure.com", token: "t", fetch });
+
+    await expect(client.collectPaginated("/api/v1/things")).rejects.toMatchObject({
+      status: 502,
+      message: "Canvas pagination response must be an array.",
+    });
+  });
+
+  it("stops when Canvas repeats a pagination link", async () => {
+    const next = "https://x.instructure.com/api/v1/things?page=2";
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(page([1], next))
+      .mockResolvedValueOnce(page([2], next));
+    const client = new CanvasClient({ domain: "x.instructure.com", token: "t", fetch });
+
+    await expect(client.collectPaginated("/api/v1/things")).rejects.toMatchObject({
+      status: 502,
+      message: "Canvas pagination link repeats a previous page.",
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
