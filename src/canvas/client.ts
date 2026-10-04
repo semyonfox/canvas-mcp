@@ -65,12 +65,20 @@ export class CanvasClient {
 
     async *getPaginated<T>(path: string, query?: Query): AsyncIterable<T[]> {
         let res = await this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
+        const visited = new Set([this.buildUrl(path, query)]);
         while (true) {
             const batch = await readJsonOrNull<T[]>(res);
             if (batch === null) return;
+            if (!Array.isArray(batch)) {
+                throw new CanvasError(502, "Canvas pagination response must be an array.");
+            }
             yield batch;
             const next = parseNextLink(res.headers.get("link"));
             if (!next) return;
+            if (visited.has(next)) {
+                throw new CanvasError(502, "Canvas pagination link repeats a previous page.");
+            }
+            visited.add(next);
             res = await this.requestAbsolute(next);
         }
     }

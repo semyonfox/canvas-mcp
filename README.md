@@ -29,7 +29,7 @@ Discovery and tool-listing do not require Canvas credentials. A tool call resolv
 ## Prerequisites
 
 - Node.js 22+
-- pnpm 10+
+- pnpm 11.22.0, as pinned in `package.json`
 - A Canvas access token and tenant domain for real Canvas calls
 
 ## Run locally

@@ -229,9 +229,9 @@ export const calendarTools: ToolDef[] = [
         }),
         handler: async (args, { canvas }) => {
             const note = await canvas.put(`/api/v1/planner_notes/${args.note_id}`, {
-                ...(args.title ? { title: args.title } : {}),
-                ...(args.details ? { details: args.details } : {}),
-                ...(args.todo_date ? { todo_date: args.todo_date } : {}),
+                ...(args.title !== undefined ? { title: args.title } : {}),
+                ...(args.details !== undefined ? { details: args.details } : {}),
+                ...(args.todo_date !== undefined ? { todo_date: args.todo_date } : {}),
             });
             return jsonResult(note);
         },
