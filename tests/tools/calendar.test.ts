@@ -294,6 +294,16 @@ describe("calendar tools", () => {
         expect(Object.keys(body)).toHaveLength(0);
     });
 
+    it("canvas_update_planner_note forwards an empty details value to clear it", async () => {
+        const put = vi.fn().mockResolvedValue({ id: 5, details: "" });
+        const tool = findTool("canvas_update_planner_note");
+        await tool.handler(
+            { note_id: 5, details: "" },
+            { canvas: fakeCanvas({ put }) },
+        );
+        expect(put).toHaveBeenCalledWith("/api/v1/planner_notes/5", { details: "" });
+    });
+
     it("canvas_delete_planner_note deletes planner_notes/:id", async () => {
         const del = vi.fn().mockResolvedValue({ deleted: true });
         const tool = findTool("canvas_delete_planner_note");
