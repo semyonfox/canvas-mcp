@@ -1,6 +1,6 @@
 # Canvas MCP tool manifest
 
-This is the checked-in inventory for the runtime registry in `src/tools/index.ts`. It contains only tools that are registered by `src/server.ts`; it does not list planned, removed, or commented-out operations. The current catalog has **130 tools across 16 source modules** (the 15 Canvas workflow modules plus Canvas Progress).
+This is the checked-in inventory for the runtime registry in `src/tools/index.ts`. It contains only tools that are registered by `src/server.ts`; it does not list planned, removed, or commented-out operations. The current catalog has **130 tools across 17 source modules**.
 
 Use MCP `tools/list` for the authoritative live descriptions, input schemas, titles, and safety annotations. This file is intentionally a compact name-level inventory so it stays auditable when Canvas's request fields evolve.
 
@@ -10,7 +10,8 @@ Use MCP `tools/list` for the authoritative live descriptions, input schemas, tit
 - List tools use Canvas pagination where the underlying endpoint supports it. JSON results provide both structured MCP content and a JSON text fallback.
 - `canvas_bulk_update_assignment_dates` returns Canvas's asynchronous Progress object. Use `canvas_get_progress` with its ID to monitor completion.
 - `canvas_get_conversation` explicitly avoids Canvas's default “mark as read on fetch” behavior.
-- `canvas_upload_file` returns an explicit MCP error because it cannot perform Canvas's external three-step file-upload flow. `canvas_download_file_to_disk` also returns an explicit error rather than writing to disk, while including a Canvas download URL when one is available.
+- `canvas_upload_file` and `canvas_submit_assignment` (`online_upload`) run Canvas's three-step upload flow, taking bytes from an allowlisted server path (`CANVAS_UPLOAD_ROOTS`) or from the client as base64. `canvas_upload_file` can also hand out an upload slot for the client to post to directly. See the README section on file uploads.
+- `canvas_list_my_coursework` merges planner items with Canvas's missing-submissions list into one status row per assignment, quiz or graded discussion.
 - Canvas permissions, not this catalog, determine whether a token may perform a mutating operation. Consult the [official Canvas REST documentation](https://developerdocs.instructure.com/services/canvas) for tenant-specific behavior and permissions.
 
 ## Registered tools
@@ -19,9 +20,9 @@ Use MCP `tools/list` for the authoritative live descriptions, input schemas, tit
 
 `canvas_list_courses`, `canvas_get_course`, `canvas_list_sections`, `canvas_create_course`
 
-### Assignments and progress (11)
+### Assignments and progress (12)
 
-`canvas_list_assignments`, `canvas_get_assignment`, `canvas_list_assignment_groups`, `canvas_list_missing_assignments`, `canvas_create_assignment`, `canvas_update_assignment`, `canvas_delete_assignment`, `canvas_create_assignment_group`, `canvas_bulk_update_assignment_dates`, `canvas_assign_peer_review`, `canvas_get_progress`
+`canvas_list_assignments`, `canvas_get_assignment`, `canvas_list_assignment_groups`, `canvas_list_missing_assignments`, `canvas_list_my_coursework`, `canvas_create_assignment`, `canvas_update_assignment`, `canvas_delete_assignment`, `canvas_create_assignment_group`, `canvas_bulk_update_assignment_dates`, `canvas_assign_peer_review`, `canvas_get_progress`
 
 ### Submissions (10)
 
@@ -51,9 +52,9 @@ Use MCP `tools/list` for the authoritative live descriptions, input schemas, tit
 
 `canvas_list_discussion_topics`, `canvas_get_discussion_topic`, `canvas_get_discussion_view`, `canvas_list_discussion_entries`, `canvas_get_discussion_entry`, `canvas_create_discussion_topic`, `canvas_post_discussion_entry`, `canvas_reply_to_discussion_entry`, `canvas_delete_discussion_topic`
 
-### Files (8)
+### Files (7)
 
-`canvas_list_course_files`, `canvas_list_folders`, `canvas_list_folder_files`, `canvas_get_file`, `canvas_get_file_download_url`, `canvas_upload_file`, `canvas_delete_file`, `canvas_download_file_to_disk`
+`canvas_list_course_files`, `canvas_list_folders`, `canvas_list_folder_files`, `canvas_get_file`, `canvas_get_file_download_url`, `canvas_upload_file`, `canvas_delete_file`
 
 ### Messages (8)
 

@@ -29,7 +29,8 @@ export const gradeTools: ToolDef[] = [
     {
         name: "canvas_get_assignment_feedback",
         description:
-            "Get grading feedback for a specific assignment submission, including submission comments and rubric assessment.",
+            "Get grading feedback for the authenticated student's submission: grade, submission comments, and the rubric " +
+            "assessment. By default full_rubric_assessment adds each criterion's description, rating and comments.",
         inputSchema: z.object({
             course_id: canvasId,
             assignment_id: canvasId,
@@ -39,7 +40,7 @@ export const gradeTools: ToolDef[] = [
             const submission = await canvas.get(
                 `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions/self`,
                 {
-                    include: args.include ?? ["submission_comments", "rubric_assessment"],
+                    include: args.include ?? ["submission_comments", "rubric_assessment", "full_rubric_assessment"],
                 },
             );
             return jsonResult(submission);

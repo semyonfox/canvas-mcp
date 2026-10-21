@@ -1,10 +1,89 @@
 import { z } from "zod";
 import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
+import type { CanvasClient } from "../canvas/client.js";
 import { jsonResult, textResult } from "./types.js";
+import { hasUploadSource, readUploadSource, uploadSourceFields } from "./upload-source.js";
 
 const canvasUserId = z.union([z.literal("self"), canvasId]);
 const submissionStudentId = z.union([z.literal("self"), z.literal("all"), canvasId]);
+
+export interface SubmissionSummary {
+    id: string | undefined;
+    assignment_id: string | undefined;
+    workflow_state: string | undefined;
+    submission_type: string | undefined;
+    submitted_at: string | null | undefined;
+    attempt: number | null | undefined;
+    late: boolean | undefined;
+    missing: boolean | undefined;
+    seconds_late: number | undefined;
+    attachments: Array<{ id: string; display_name?: string; size?: number; content_type?: string }>;
+}
+
+function field<T>(record: Record<string, unknown>, key: string, guard: (value: unknown) => value is T): T | undefined {
+    const value = record[key];
+    return guard(value) ? value : undefined;
+}
+
+const isString = (value: unknown): value is string => typeof value === "string";
+const isNumber = (value: unknown): value is number => typeof value === "number";
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
+const isIdLike = (value: unknown): value is string | number => isString(value) || isNumber(value);
+
+/** compact submission state without preview or download URLs, which carry verifiers */
+export function summariseSubmission(submission: Record<string, unknown> | null): SubmissionSummary {
+    const record = submission ?? {};
+    const id = field(record, "id", isIdLike);
+    const assignmentId = field(record, "assignment_id", isIdLike);
+    const attachments = Array.isArray(record.attachments) ? record.attachments : [];
+    return {
+        id: id === undefined ? undefined : String(id),
+        assignment_id: assignmentId === undefined ? undefined : String(assignmentId),
+        workflow_state: field(record, "workflow_state", isString),
+        submission_type: field(record, "submission_type", isString),
+        submitted_at: record.submitted_at === null ? null : field(record, "submitted_at", isString),
+        attempt: record.attempt === null ? null : field(record, "attempt", isNumber),
+        late: field(record, "late", isBoolean),
+        missing: field(record, "missing", isBoolean),
+        seconds_late: field(record, "seconds_late", isNumber),
+        attachments: attachments.flatMap((raw: unknown) => {
+            if (!raw || typeof raw !== "object") return [];
+            const file = raw as Record<string, unknown>;
+            const fileId = field(file, "id", isIdLike);
+            if (fileId === undefined) return [];
+            const displayName = field(file, "display_name", isString);
+            const size = field(file, "size", isNumber);
+            const contentType = field(file, "content-type", isString);
+            return [{
+                id: String(fileId),
+                ...(displayName !== undefined ? { display_name: displayName } : {}),
+                ...(size !== undefined ? { size } : {}),
+                ...(contentType !== undefined ? { content_type: contentType } : {}),
+            }];
+        }),
+    };
+}
+
+// fail before uploading anything Canvas would refuse to attach
+async function assertAcceptsUpload(canvas: CanvasClient, assignmentPath: string, filename: string): Promise<void> {
+    const assignment = await canvas.get<Record<string, unknown>>(assignmentPath);
+    const types = Array.isArray(assignment?.submission_types) ? assignment.submission_types : [];
+    if (!types.includes("online_upload")) {
+        throw new Error(`This assignment does not accept file uploads (submission_types: ${types.join(", ") || "none"}).`);
+    }
+    if (assignment?.locked_for_user === true) {
+        const explanation = typeof assignment.lock_explanation === "string" ? ` ${assignment.lock_explanation}` : "";
+        throw new Error(`This assignment is locked for submission.${explanation}`);
+    }
+    const allowed = Array.isArray(assignment?.allowed_extensions)
+        ? assignment.allowed_extensions.filter(isString).map((ext) => ext.toLowerCase().replace(/^\./, ""))
+        : [];
+    const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "";
+    if (allowed.length > 0 && !allowed.includes(ext)) {
+        throw new Error(`This assignment only accepts ${allowed.join(", ")} files; got "${filename}".`);
+    }
+}
 
 export const submissionTools: ToolDef[] = [
     {
@@ -107,64 +186,88 @@ export const submissionTools: ToolDef[] = [
         },
     },
 
-    // ============================================================
-    // EDUCATOR / ADMINISTRATOR TOOLS
-    // ============================================================
     {
         name: "canvas_submit_assignment",
         description:
-            "Submit an assignment. Supports online_text_entry and online_url directly. online_upload and media_recording require their documented multi-step upload flows. Requires appropriate permissions.",
+            "Submit the authenticated student's work for an assignment. online_text_entry takes body, online_url takes url. " +
+            "online_upload takes either file_ids from earlier uploads, or one file to upload in the same call: file_path " +
+            "(read on the MCP server host, only inside CANVAS_UPLOAD_ROOTS) or content_base64 with filename (sent by the client). " +
+            "Uploads are checked against the assignment's submission types and allowed extensions first, and the result " +
+            "reports workflow_state, submitted_at, late and the attached files. media_recording is not supported.",
         inputSchema: z.object({
             course_id: canvasId,
             assignment_id: canvasId,
             submission_type: z.enum(["online_text_entry", "online_url", "online_upload", "media_recording"]),
             body: z.string().optional(),
             url: z.string().optional(),
+            file_ids: z.array(canvasId).min(1).optional(),
+            ...uploadSourceFields,
+            comment: z.string().optional().describe("Optional comment posted with the submission."),
         }),
-        handler: async (args, { canvas }) => {
-            if (args.submission_type === "online_upload") {
-                return {
-                    ...textResult(
-                        "online_upload submissions require a multi-step flow: " +
-                        "(1) POST /api/v1/courses/:course_id/assignments/:assignment_id/submissions/self/files " +
-                        "to request an upload token (provide name and size), " +
-                        "(2) upload the file bytes to the returned upload_url, " +
-                        "(3) confirm the upload to get a file_id, " +
-                        "(4) POST /api/v1/courses/:course_id/assignments/:assignment_id/submissions " +
-                        "with submission[submission_type]=online_upload and submission[file_ids][]=[file_id]. " +
-                        "This tool does not implement file upload — use the Canvas Files API directly.",
-                    ),
-                    isError: true,
-                };
-            }
+        handler: async (args, { canvas, uploadRoots }) => {
             if (args.submission_type === "media_recording") {
                 return {
                     ...textResult(
-                        "media_recording submissions require a multi-step flow: " +
-                        "(1) GET /api/v1/services/kaltura_session to obtain a Kaltura upload token, " +
-                        "(2) upload the media to the Kaltura endpoint using the session token, " +
-                        "(3) POST /api/v1/courses/:course_id/assignments/:assignment_id/submissions " +
-                        "with submission[submission_type]=media_recording, " +
-                        "submission[media_comment_id]=<kaltura_entry_id>, and " +
-                        "submission[media_comment_type]=video|audio. " +
-                        "This tool does not implement Kaltura media upload — use the Kaltura API directly.",
+                        "media_recording submissions need a Kaltura upload (GET /api/v1/services/kaltura_session, " +
+                        "upload to Kaltura, then submit media_comment_id), which this server does not implement.",
                     ),
                     isError: true,
                 };
             }
-            const result = await canvas.post(
-                `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions`,
-                {
+            const base = `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}`;
+            const comment = args.comment !== undefined ? { comment: { text_comment: args.comment } } : {};
+
+            if (args.submission_type !== "online_upload") {
+                const result = await canvas.post(`${base}/submissions`, {
                     submission: {
                         submission_type: args.submission_type,
                         ...(args.body !== undefined ? { body: args.body } : {}),
                         ...(args.url !== undefined ? { url: args.url } : {}),
                     },
-                },
-            );
-            return jsonResult(result);
+                    ...comment,
+                });
+                return jsonResult(result);
+            }
+
+            if ((args.file_ids === undefined) === !hasUploadSource(args)) {
+                throw new Error("online_upload needs either file_ids or one of file_path / content_base64.");
+            }
+
+            let fileIds: string[] = args.file_ids ?? [];
+            if (hasUploadSource(args)) {
+                const file = await readUploadSource(args, uploadRoots ?? []);
+                await assertAcceptsUpload(canvas, base, file.name);
+                const uploaded = await canvas.uploadFile(`${base}/submissions/self/files`, file);
+                fileIds = [uploaded.id];
+            }
+
+            let submission = await canvas.post<Record<string, unknown>>(`${base}/submissions`, {
+                submission: { submission_type: "online_upload", file_ids: fileIds },
+                ...comment,
+            });
+            // the create response normally lists attachments; re-read once if it does not
+            if (!Array.isArray(submission?.attachments)) {
+                submission = await canvas.get<Record<string, unknown>>(`${base}/submissions/self`);
+            }
+            const summary = summariseSubmission(submission);
+            const attachedIds = new Set(summary.attachments.map((file) => file.id));
+            const missing = fileIds.filter((id) => !attachedIds.has(id));
+            if (missing.length > 0) {
+                return {
+                    ...jsonResult({
+                        error: `Canvas accepted the submission but file(s) ${missing.join(", ")} are not attached to it. Check the submission in Canvas.`,
+                        submission: summary,
+                    }),
+                    isError: true,
+                };
+            }
+            return jsonResult(summary);
         },
     },
+
+    // ============================================================
+    // EDUCATOR / ADMINISTRATOR TOOLS
+    // ============================================================
     {
         name: "canvas_grade_submission",
         description: "Grade a student's submission for an assignment. Requires educator permissions.",

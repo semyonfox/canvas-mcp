@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { CanvasError } from "./errors.js";
 import { parseNextLink } from "./pagination.js";
 
@@ -11,10 +12,53 @@ export interface CanvasClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 300_000;
 const CANVAS_ACCEPT_HEADER = "application/json+canvas-string-ids";
 const MAX_READ_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 200;
 const MAX_RETRY_DELAY_MS = 5_000;
+
+export interface UploadFile {
+    name: string;
+    bytes: Uint8Array<ArrayBuffer>;
+    contentType?: string;
+}
+
+export interface UploadOptions {
+    parentFolderPath?: string;
+    onDuplicate?: "overwrite" | "rename";
+}
+
+export interface UploadSlot {
+    upload_url: string;
+    upload_params: Record<string, string>;
+    file_param: string;
+}
+
+/** the subset of a Canvas File object the upload flow relies on */
+export interface UploadedFile {
+    id: string;
+    display_name?: string;
+    filename?: string;
+    size?: number;
+    "content-type"?: string;
+    upload_status?: string;
+}
+
+const uploadSlotSchema = z.object({
+    upload_url: z.string().url(),
+    upload_params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({}),
+    file_param: z.string().optional(),
+});
+
+const uploadedFileSchema = z.looseObject({
+    id: z.union([z.string(), z.number()]).transform(String),
+    display_name: z.string().optional(),
+    filename: z.string().optional(),
+    size: z.number().optional(),
+    "content-type": z.string().optional(),
+    upload_status: z.string().optional(),
+});
 
 type QueryValue = string | number | boolean | undefined | null | Array<string | number | boolean>;
 export type Query = Record<string, QueryValue>;
@@ -63,6 +107,109 @@ export class CanvasClient {
         return this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
     }
 
+    /**
+     * Step 1 of Canvas's file upload flow. `initPath` picks the context, e.g.
+     * /api/v1/users/self/files or a submissions/self/files endpoint. The slot's
+     * signature is valid for about 30 minutes.
+     */
+    async requestUploadSlot(
+        initPath: string,
+        file: { name: string; size: number; contentType?: string },
+        opts: UploadOptions = {},
+    ): Promise<UploadSlot> {
+        const raw = await this.post(initPath, {
+            name: file.name,
+            size: file.size,
+            ...(file.contentType ? { content_type: file.contentType } : {}),
+            ...(opts.parentFolderPath ? { parent_folder_path: opts.parentFolderPath } : {}),
+            ...(opts.onDuplicate ? { on_duplicate: opts.onDuplicate } : {}),
+        });
+        const parsed = uploadSlotSchema.safeParse(raw);
+        if (!parsed.success) {
+            throw new CanvasError(502, "Canvas did not return a usable upload_url and upload_params.");
+        }
+        const url = new URL(parsed.data.upload_url);
+        if (url.protocol !== "https:") {
+            throw new CanvasError(502, "Canvas returned a non-HTTPS upload_url.");
+        }
+        return {
+            upload_url: parsed.data.upload_url,
+            upload_params: Object.fromEntries(
+                Object.entries(parsed.data.upload_params).map(([k, v]) => [k, String(v)]),
+            ),
+            file_param: parsed.data.file_param ?? "file",
+        };
+    }
+
+    /**
+     * Runs all three upload steps and returns the confirmed Canvas file.
+     * Storage may answer 201 with the file JSON or 3xx to a Canvas confirm URL.
+     */
+    async uploadFile(initPath: string, file: UploadFile, opts: UploadOptions = {}): Promise<UploadedFile> {
+        const slot = await this.requestUploadSlot(
+            initPath,
+            {
+                name: file.name,
+                size: file.bytes.byteLength,
+                ...(file.contentType ? { contentType: file.contentType } : {}),
+            },
+            opts,
+        );
+
+        // the signed params must be sent unchanged with the file field last
+        const form = new FormData();
+        for (const [key, value] of Object.entries(slot.upload_params)) form.append(key, value);
+        form.append(
+            slot.file_param,
+            new Blob([file.bytes], file.contentType ? { type: file.contentType } : {}),
+            file.name,
+        );
+
+        // no bearer token here: upload_url is often a third-party storage host
+        const res = await this.fetchImpl(slot.upload_url, {
+            method: "POST",
+            body: form,
+            redirect: "manual",
+            signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+        });
+
+        const uploaded = await this.confirmUpload(res, slot.upload_url);
+        if (uploaded.size !== undefined && uploaded.size !== file.bytes.byteLength) {
+            throw new CanvasError(
+                502,
+                `Canvas recorded file ${uploaded.id} as ${uploaded.size} bytes but ${file.bytes.byteLength} were uploaded.`,
+            );
+        }
+        return uploaded;
+    }
+
+    /**
+     * Step 3 for a client that posted the bytes itself: GET the Canvas confirm
+     * URL from the storage redirect's Location header.
+     */
+    async confirmUploadLocation(location: string): Promise<UploadedFile> {
+        const res = await this.requestAbsolute(location, "upload confirmation");
+        return parseUploadedFile(await readJsonOrNull<unknown>(res));
+    }
+
+    private async confirmUpload(res: Response, uploadUrl: string): Promise<UploadedFile> {
+        const location = res.headers.get("location");
+        if (res.status >= 300 && res.status < 400) {
+            await res.body?.cancel();
+            if (!location) throw new CanvasError(502, "Canvas upload redirect had no Location header.");
+            return this.confirmUploadLocation(new URL(location, uploadUrl).toString());
+        }
+        if (!res.ok) {
+            // storage error bodies can echo signed fields, so keep them out of the message
+            await res.body?.cancel();
+            throw new CanvasError(res.status, `Canvas file upload to storage failed with HTTP ${res.status}.`);
+        }
+        const body = await readJsonOrNull<unknown>(res).catch(() => null);
+        if (body && typeof body === "object" && "id" in body) return parseUploadedFile(body);
+        if (location) return this.confirmUploadLocation(new URL(location, uploadUrl).toString());
+        throw new CanvasError(502, "Canvas upload succeeded but returned neither file JSON nor a Location.");
+    }
+
     async *getPaginated<T>(path: string, query?: Query): AsyncIterable<T[]> {
         let res = await this.request(path, { method: "GET", ...(query !== undefined ? { query } : {}) });
         const visited = new Set([this.buildUrl(path, query)]);
@@ -79,7 +226,7 @@ export class CanvasClient {
                 throw new CanvasError(502, "Canvas pagination link repeats a previous page.");
             }
             visited.add(next);
-            res = await this.requestAbsolute(next);
+            res = await this.requestAbsolute(next, "pagination link");
         }
     }
 
@@ -89,13 +236,13 @@ export class CanvasClient {
         return all;
     }
 
-    private async requestAbsolute(url: string): Promise<Response> {
-        this.assertPaginationOrigin(url);
+    private async requestAbsolute(url: string, label: string): Promise<Response> {
+        this.assertCanvasOrigin(url, label);
         const headers = new Headers({ authorization: `Bearer ${this.token}`, accept: CANVAS_ACCEPT_HEADER });
         const init = (): RequestInit => ({ method: "GET", headers, signal: AbortSignal.timeout(this.timeoutMs) });
         const res = await this.fetchWithReadRetries(url, init);
         if (!res.ok) {
-            throw await this.toCanvasError(res, "pagination fetch");
+            throw await this.toCanvasError(res, `${label} fetch`);
         }
         return res;
     }
@@ -133,15 +280,16 @@ export class CanvasClient {
         }
     }
 
-    private assertPaginationOrigin(url: string): void {
+    // the bearer token must only ever travel to the configured Canvas origin
+    private assertCanvasOrigin(url: string, label: string): void {
         let next: URL;
         try {
             next = new URL(url);
         } catch {
-            throw new CanvasError(502, "Canvas pagination link is invalid.");
+            throw new CanvasError(502, `Canvas ${label} is invalid.`);
         }
         if (next.origin !== this.baseOrigin) {
-            throw new CanvasError(502, "Canvas pagination link points outside the configured Canvas origin.");
+            throw new CanvasError(502, `Canvas ${label} points outside the configured Canvas origin.`);
         }
     }
 
@@ -186,6 +334,21 @@ function retryAfterMs(value: string | null): number | undefined {
     const timestamp = Date.parse(value);
     if (Number.isNaN(timestamp)) return undefined;
     return Math.min(Math.max(timestamp - Date.now(), 0), MAX_RETRY_DELAY_MS);
+}
+
+function parseUploadedFile(body: unknown): UploadedFile {
+    const parsed = uploadedFileSchema.safeParse(body);
+    if (!parsed.success) throw new CanvasError(502, "Canvas upload confirmation did not include a file id.");
+    const { id, display_name, filename, size, upload_status } = parsed.data;
+    const contentType = parsed.data["content-type"];
+    return {
+        id,
+        ...(display_name !== undefined ? { display_name } : {}),
+        ...(filename !== undefined ? { filename } : {}),
+        ...(size !== undefined ? { size } : {}),
+        ...(contentType !== undefined ? { "content-type": contentType } : {}),
+        ...(upload_status !== undefined ? { upload_status } : {}),
+    };
 }
 
 async function readJsonOrNull<T>(res: Response): Promise<T | null> {

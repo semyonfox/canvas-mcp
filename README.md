@@ -85,6 +85,7 @@ Other deployment controls:
 | `MCP_ALLOWED_HOSTS` | required for non-loopback `HOST` | Comma-separated hostnames accepted in the `Host` header. |
 | `MCP_ALLOWED_ORIGINS` | none | Comma-separated exact HTTP(S) browser origins allowed by CORS. Wildcards are not supported. |
 | `LOG_LEVEL` | `info` | One of `debug`, `info`, `warn`, or `error`. |
+| `CANVAS_UPLOAD_ROOTS` | none | Comma-separated absolute directories that `file_path` uploads may read from. Unset disables server-side paths. |
 
 `MCP_ALLOWED_ORIGINS` controls browser CORS only; it is not authentication. Put any non-local deployment behind TLS and an authenticated reverse proxy or private network boundary.
 
@@ -136,6 +137,15 @@ This server exposes both read and mutating Canvas operations. Canvas permissions
 
 This release adopts the 2026-07-28 MCP core protocol, but does not advertise an MCP Apps UI extension. The official `@modelcontextprotocol/ext-apps` helper currently peers with the legacy v1 SDK, which is incompatible with this server's v2 core SDK; claiming UI support here would be misleading.
 
-Some Canvas workflows remain intentionally limited: `canvas_upload_file` returns an explicit MCP error because it cannot transfer file bytes through Canvas's external multi-step upload flow. `canvas_download_file_to_disk` likewise returns an explicit error rather than writing to the server filesystem, while including Canvas's download URL when one is available. The manifest calls out those compatibility tools.
+## File uploads and submissions
+
+`canvas_submit_assignment` with `submission_type=online_upload` runs Canvas's whole upload flow and submits in one call, and `canvas_upload_file` uploads to a user's files, course files, or an assignment's submission files. Both take the bytes in one of two ways:
+
+- `file_path` is read on the machine running this server. It only works when the server and the file share a host, and only inside `CANVAS_UPLOAD_ROOTS`. Paths are resolved through symlinks, and hidden directories below a root (`.ssh`, `.config`) are refused, so a prompt cannot turn the server into a way to send arbitrary local files to Canvas.
+- `content_base64` with `filename` is sent by the client, so it works for a remote server. It is practical for small files and scripted clients. An LLM has to emit every byte as tokens.
+
+For a large file on a remote server, call `canvas_upload_file` with `filename` and `size` and no bytes. You get Canvas's signed `upload_url` and `upload_params`. The client posts the file there itself, then passes the resulting file id to `canvas_submit_assignment` as `file_ids`. The signed parameters expire after about 30 minutes and will appear in the client transcript.
+
+`media_recording` submissions (Kaltura) are not supported.
 
 Canvas is a trademark of Instructure, Inc. This project is not affiliated with or endorsed by Instructure. [ATTRIBUTION.md](./ATTRIBUTION.md) records upstream project provenance.

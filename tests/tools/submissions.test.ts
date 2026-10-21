@@ -130,32 +130,6 @@ describe("submission tools", () => {
         expect(result.content[0].text).toContain("online_url");
     });
 
-    it("canvas_submit_assignment returns stub for online_upload", async () => {
-        const post = vi.fn();
-        const tool = findTool("canvas_submit_assignment");
-        const result = await tool.handler(
-            { course_id: 5, assignment_id: 10, submission_type: "online_upload" },
-            { canvas: fakeCanvas({ post }) },
-        );
-        expect(post).not.toHaveBeenCalled();
-        expect(result.content[0].text).toContain("multi-step flow");
-        expect(result.content[0].text).toContain("file_ids");
-        expect(result.isError).toBe(true);
-    });
-
-    it("canvas_submit_assignment returns stub for media_recording", async () => {
-        const post = vi.fn();
-        const tool = findTool("canvas_submit_assignment");
-        const result = await tool.handler(
-            { course_id: 5, assignment_id: 10, submission_type: "media_recording" },
-            { canvas: fakeCanvas({ post }) },
-        );
-        expect(post).not.toHaveBeenCalled();
-        expect(result.content[0].text).toContain("multi-step flow");
-        expect(result.content[0].text).toContain("Kaltura");
-        expect(result.isError).toBe(true);
-    });
-
     it("canvas_grade_submission puts grade to submission endpoint", async () => {
         const put = vi.fn().mockResolvedValue({ id: 601, grade: "A", workflow_state: "graded" });
         const tool = findTool("canvas_grade_submission");
