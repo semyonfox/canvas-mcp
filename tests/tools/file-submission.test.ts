@@ -53,11 +53,26 @@ function fakeNetwork(routes: Route[]) {
 const on = (method: string, url: string, reply: (call: Call) => Response): Route =>
     (call) => (call.method === method && call.url === url ? reply(call) : undefined);
 
-const assignment = (overrides: Record<string, unknown> = {}) =>
+const assignmentOnly = (overrides: Record<string, unknown> = {}) =>
     on("GET", `${API}/courses/5/assignments/10`, () =>
-        json(200, { id: "10", submission_types: ["online_upload"], allowed_extensions: ["pdf"], ...overrides }));
+        json(200, { id: "10", submission_types: ["online_upload"], allowed_extensions: ["pdf"], allowed_attempts: -1, ...overrides }));
 
-const uploadSlot = on("POST", `${API}/courses/5/assignments/10/submissions/self/files`, () =>
+const currentSubmission = (overrides: Record<string, unknown> = {}) =>
+    on("GET", `${API}/courses/5/assignments/10/submissions/self`, () =>
+        json(200, { id: "77", workflow_state: "unsubmitted", attempt: null, ...overrides }));
+
+// the preflight reads both before anything is uploaded or submitted
+const assignment = (overrides: Record<string, unknown> = {}, submission: Record<string, unknown> = {}): Route => {
+    const routes = [assignmentOnly(overrides), currentSubmission(submission)];
+    return (call) => routes.reduce<Response | undefined>((found, route) => found ?? route(call), undefined);
+};
+
+const callTo = (calls: Call[], method: string, url: string) =>
+    calls.find((call) => call.method === method && call.url === url);
+const SLOT_PATH = `${API}/courses/5/assignments/10/submissions/self/files`;
+const SUBMIT_PATH = `${API}/courses/5/assignments/10/submissions`;
+
+const uploadSlot = on("POST", SLOT_PATH, () =>
     json(200, {
         upload_url: UPLOAD_URL,
         upload_params: { filename: "report.pdf", content_type: "application/pdf", signature: "sig-123" },
@@ -130,13 +145,14 @@ describe("online_upload submission flow", () => {
             missing: false,
             seconds_late: 0,
             attachments: [{ id: "900", display_name: "report.pdf", size: PDF.byteLength, content_type: "application/pdf" }],
+            previous_attempt: 0,
         });
         expect(result.content[0]?.text).not.toContain("verifier");
 
-        const slotRequest = calls[1];
+        const slotRequest = callTo(calls, "POST", SLOT_PATH);
         expect(JSON.parse(String(slotRequest?.body))).toEqual({ name: "report.pdf", size: PDF.byteLength });
 
-        const storage = calls[2];
+        const storage = callTo(calls, "POST", UPLOAD_URL);
         expect(storage?.headers.get("authorization")).toBeNull();
         const form = storage?.body;
         expect(form).toBeInstanceOf(FormData);
@@ -146,7 +162,7 @@ describe("online_upload submission flow", () => {
         expect(sent).toBeInstanceOf(File);
         expect(new Uint8Array(await (sent as File).arrayBuffer())).toEqual(PDF);
 
-        const submit = calls[3];
+        const submit = callTo(calls, "POST", SUBMIT_PATH);
         expect(JSON.parse(String(submit?.body))).toEqual({
             submission: { submission_type: "online_upload", file_ids: ["900"] },
         });
@@ -167,7 +183,7 @@ describe("online_upload submission flow", () => {
         expect(result.isError).toBeUndefined();
         const confirmCall = calls.find((call) => call.url === confirm);
         expect(confirmCall?.headers.get("authorization")).toBe("Bearer secret-token");
-        expect(calls.at(-1)?.url).toBe(`${API}/courses/5/assignments/10/submissions`);
+        expect(calls.at(-1)?.url).toBe(SUBMIT_PATH);
     });
 
     it("fetches the Location when a 201 has no file JSON body", async () => {
@@ -206,7 +222,7 @@ describe("online_upload submission flow", () => {
 
         await expect(run(submissionTools, "canvas_submit_assignment", submitArgs, canvas))
             .rejects.toThrow(/recorded file 900 as 3 bytes/);
-        expect(calls.filter((call) => call.url.endsWith("/submissions"))).toHaveLength(0);
+        expect(callTo(calls, "POST", SUBMIT_PATH)).toBeUndefined();
     });
 
     it("keeps storage error bodies, which may echo signatures, out of the error", async () => {
@@ -226,22 +242,21 @@ describe("online_upload submission flow", () => {
 
         await expect(run(submissionTools, "canvas_submit_assignment", { ...submitArgs, filename: "report.docx" }, canvas))
             .rejects.toThrow(/only accepts pdf/);
-        expect(calls).toHaveLength(1);
+        expect(calls.every((call) => call.method === "GET")).toBe(true);
     });
 
     it("rejects assignments that do not take uploads", async () => {
         const { canvas } = fakeNetwork([assignment({ submission_types: ["online_text_entry"] })]);
 
         await expect(run(submissionTools, "canvas_submit_assignment", submitArgs, canvas))
-            .rejects.toThrow(/does not accept file uploads/);
+            .rejects.toThrow(/does not accept online_upload/);
     });
 
     it("submits existing file_ids with a comment and re-reads when attachments are absent", async () => {
         const { canvas, calls } = fakeNetwork([
-            on("POST", `${API}/courses/5/assignments/10/submissions`, () =>
-                json(201, { id: "77", workflow_state: "submitted" })),
-            on("GET", `${API}/courses/5/assignments/10/submissions/self`, () =>
-                json(200, { id: "77", workflow_state: "submitted", attachments: [fileJson()] })),
+            assignmentOnly(),
+            currentSubmission({ attempt: 1, attachments: [fileJson()] }),
+            on("POST", SUBMIT_PATH, () => json(201, { id: "77", workflow_state: "submitted", attempt: 2 })),
         ]);
 
         const result = await run(submissionTools, "canvas_submit_assignment", {
@@ -253,15 +268,17 @@ describe("online_upload submission flow", () => {
         }, canvas);
 
         expect(result.isError).toBeUndefined();
-        expect(JSON.parse(String(calls[0]?.body))).toEqual({
+        expect(JSON.parse(String(callTo(calls, "POST", SUBMIT_PATH)?.body))).toEqual({
             submission: { submission_type: "online_upload", file_ids: ["900"] },
             comment: { text_comment: "final version" },
         });
-        expect(calls).toHaveLength(2);
+        expect(calls.filter((call) => call.url === `${SUBMIT_PATH}/self`)).toHaveLength(2);
+        expect(result.structuredContent).toMatchObject({ previous_attempt: 1 });
     });
 
     it("flags a submission that does not carry the uploaded file", async () => {
         const { canvas } = fakeNetwork([
+            assignment(),
             on("POST", `${API}/courses/5/assignments/10/submissions`, () =>
                 json(201, { id: "77", workflow_state: "submitted", attachments: [fileJson({ id: "111" })] })),
         ]);
@@ -277,13 +294,85 @@ describe("online_upload submission flow", () => {
         expect(result.content[0]?.text).toContain("900");
     });
 
-    it("needs exactly one of file_ids or a file source", async () => {
+    it("needs file_ids or a file source", async () => {
         const { canvas } = fakeNetwork([]);
         await expect(run(submissionTools, "canvas_submit_assignment", {
             course_id: "5",
             assignment_id: "10",
             submission_type: "online_upload",
-        }, canvas)).rejects.toThrow(/either file_ids or one of file_path/);
+        }, canvas)).rejects.toThrow(/needs file_ids, file_path or content_base64/);
+    });
+
+    it("combines earlier file_ids with a newly uploaded file", async () => {
+        const { canvas, calls } = fakeNetwork([
+            assignment(),
+            uploadSlot,
+            on("POST", UPLOAD_URL, () => json(201, fileJson())),
+            on("POST", SUBMIT_PATH, () =>
+                json(201, { id: "77", workflow_state: "submitted", attachments: [fileJson({ id: "800" }), fileJson()] })),
+        ]);
+
+        const result = await run(submissionTools, "canvas_submit_assignment", { ...submitArgs, file_ids: ["800"] }, canvas);
+
+        expect(result.isError).toBeUndefined();
+        expect(JSON.parse(String(callTo(calls, "POST", SUBMIT_PATH)?.body)).submission.file_ids).toEqual(["800", "900"]);
+    });
+
+    it("resubmits as a new attempt while attempts remain", async () => {
+        const { canvas } = fakeNetwork([
+            assignment({ allowed_attempts: 2 }, { attempt: 1, workflow_state: "submitted" }),
+            uploadSlot,
+            on("POST", UPLOAD_URL, () => json(201, fileJson())),
+            on("POST", SUBMIT_PATH, () =>
+                json(201, { id: "77", workflow_state: "submitted", attempt: 2, attachments: [fileJson()] })),
+        ]);
+
+        const result = await run(submissionTools, "canvas_submit_assignment", submitArgs, canvas);
+        expect(result.structuredContent).toMatchObject({ attempt: 2, previous_attempt: 1 });
+    });
+
+    it("stops before uploading when every attempt is used", async () => {
+        const { canvas, calls } = fakeNetwork([
+            assignment({ allowed_attempts: 2 }, { attempt: 2, extra_attempts: 0 }),
+        ]);
+
+        await expect(run(submissionTools, "canvas_submit_assignment", submitArgs, canvas))
+            .rejects.toThrow("Cannot submit: All 2 allowed attempts are used.");
+        expect(calls.every((call) => call.method === "GET")).toBe(true);
+    });
+
+    it("counts extra attempts and lets a redo request through", async () => {
+        const extra = fakeNetwork([
+            assignment({ allowed_attempts: 1 }, { attempt: 1, extra_attempts: 1 }),
+            on("POST", SUBMIT_PATH, () => json(201, { id: "77", workflow_state: "submitted", attachments: [fileJson()] })),
+        ]);
+        const fileIdArgs = { course_id: "5", assignment_id: "10", submission_type: "online_upload", file_ids: ["900"] };
+        await expect(run(submissionTools, "canvas_submit_assignment", fileIdArgs, extra.canvas)).resolves.toBeDefined();
+
+        const redo = fakeNetwork([
+            assignment({ allowed_attempts: 1 }, { attempt: 1, redo_request: true }),
+            on("POST", SUBMIT_PATH, () => json(201, { id: "77", workflow_state: "submitted", attachments: [fileJson()] })),
+        ]);
+        await expect(run(submissionTools, "canvas_submit_assignment", fileIdArgs, redo.canvas)).resolves.toBeDefined();
+    });
+
+    it("refuses a locked assignment with Canvas's explanation", async () => {
+        const { canvas } = fakeNetwork([
+            assignment({ locked_for_user: true, lock_explanation: "This assignment was locked Oct 20 at 23:59." }),
+        ]);
+        await expect(run(submissionTools, "canvas_submit_assignment", submitArgs, canvas))
+            .rejects.toThrow("Cannot submit: The assignment is locked. This assignment was locked Oct 20 at 23:59.");
+    });
+
+    it("preflights text entries too", async () => {
+        const { canvas, calls } = fakeNetwork([assignment()]);
+        await expect(run(submissionTools, "canvas_submit_assignment", {
+            course_id: "5",
+            assignment_id: "10",
+            submission_type: "online_text_entry",
+            body: "<p>answer</p>",
+        }, canvas)).rejects.toThrow(/does not accept online_text_entry/);
+        expect(callTo(calls, "POST", SUBMIT_PATH)).toBeUndefined();
     });
 
     it("still refuses media_recording without calling Canvas", async () => {
@@ -336,7 +425,7 @@ describe("file_path uploads", () => {
         const result = await run(submissionTools, "canvas_submit_assignment", pathArgs(join(root, "report.pdf")), canvas, [root]);
 
         expect(result.isError).toBeUndefined();
-        expect(JSON.parse(String(calls[1]?.body))).toMatchObject({ name: "report.pdf", size: PDF.byteLength });
+        expect(JSON.parse(String(callTo(calls, "POST", SLOT_PATH)?.body))).toMatchObject({ name: "report.pdf", size: PDF.byteLength });
     });
 
     it.each([
@@ -354,6 +443,30 @@ describe("file_path uploads", () => {
         const { canvas } = fakeNetwork([]);
         await expect(run(submissionTools, "canvas_submit_assignment", pathArgs(join(root, "report.pdf")), canvas, []))
             .rejects.toThrow(/CANVAS_UPLOAD_ROOTS is not set/);
+    });
+});
+
+describe("canvas_post_submission_comment", () => {
+    it("lets a student comment on their own attempt with an uploaded file", async () => {
+        const commentFiles = `${API}/courses/5/assignments/10/submissions/self/comments/files`;
+        const { canvas, calls } = fakeNetwork([
+            on("POST", commentFiles, () => json(200, { upload_url: UPLOAD_URL, upload_params: {} })),
+            on("POST", UPLOAD_URL, () => json(201, fileJson({ id: "950" }))),
+            on("PUT", `${SUBMIT_PATH}/self`, () => json(200, { id: "77" })),
+        ]);
+
+        await run(submissionTools, "canvas_post_submission_comment", {
+            course_id: "5",
+            assignment_id: "10",
+            comment: "corrected appendix attached",
+            attempt: 2,
+            content_base64: PDF_BASE64,
+            filename: "report.pdf",
+        }, canvas);
+
+        expect(JSON.parse(String(callTo(calls, "PUT", `${SUBMIT_PATH}/self`)?.body))).toEqual({
+            comment: { text_comment: "corrected appendix attached", attempt: 2, file_ids: ["950"] },
+        });
     });
 });
 

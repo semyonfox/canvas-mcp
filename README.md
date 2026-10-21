@@ -146,6 +146,8 @@ This release adopts the 2026-07-28 MCP core protocol, but does not advertise an 
 
 For a large file on a remote server, call `canvas_upload_file` with `filename` and `size` and no bytes. You get Canvas's signed `upload_url` and `upload_params`. The client posts the file there itself, then passes the resulting file id to `canvas_submit_assignment` as `file_ids`. The signed parameters expire after about 30 minutes and will appear in the client transcript.
 
+Submitting again is a resubmission. Canvas records a new attempt that replaces the current one for grading and keeps earlier attempts in the history; there is no API to edit or delete a submitted file. `canvas_submit_assignment` checks the submission type, lock state, attempts left (including extra attempts and redo requests) and allowed extensions before uploading anything. `canvas_post_submission_comment` defaults to your own submission and can attach files, for example a corrected appendix on a specific attempt.
+
 `media_recording` submissions (Kaltura) are not supported.
 
 Canvas is a trademark of Instructure, Inc. This project is not affiliated with or endorsed by Instructure. [ATTRIBUTION.md](./ATTRIBUTION.md) records upstream project provenance.

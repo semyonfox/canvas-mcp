@@ -65,24 +65,80 @@ export function summariseSubmission(submission: Record<string, unknown> | null):
     };
 }
 
-// fail before uploading anything Canvas would refuse to attach
-async function assertAcceptsUpload(canvas: CanvasClient, assignmentPath: string, filename: string): Promise<void> {
-    const assignment = await canvas.get<Record<string, unknown>>(assignmentPath);
-    const types = Array.isArray(assignment?.submission_types) ? assignment.submission_types : [];
-    if (!types.includes("online_upload")) {
-        throw new Error(`This assignment does not accept file uploads (submission_types: ${types.join(", ") || "none"}).`);
-    }
+export interface AttemptStatus {
+    /** null when the assignment allows unlimited attempts */
+    allowed: number | null;
+    extra: number;
+    used: number;
+    remaining: number | null;
+    redo_requested: boolean;
+    graded_attempt_is_current: boolean | undefined;
+    can_submit: boolean;
+    blocked_reason: string | undefined;
+}
+
+export function attemptStatus(
+    assignment: Record<string, unknown> | null,
+    submission: Record<string, unknown> | null,
+): AttemptStatus {
+    const record = submission ?? {};
+    const allowedRaw = field(assignment ?? {}, "allowed_attempts", isNumber);
+    const allowed = allowedRaw === undefined || allowedRaw < 0 ? null : allowedRaw;
+    const extra = field(record, "extra_attempts", isNumber) ?? 0;
+    const used = field(record, "attempt", isNumber) ?? 0;
+    const remaining = allowed === null ? null : Math.max(allowed + extra - used, 0);
+    const redoRequested = record.redo_request === true;
+
+    let blockedReason: string | undefined;
     if (assignment?.locked_for_user === true) {
-        const explanation = typeof assignment.lock_explanation === "string" ? ` ${assignment.lock_explanation}` : "";
-        throw new Error(`This assignment is locked for submission.${explanation}`);
+        const explanation = field(assignment, "lock_explanation", isString);
+        blockedReason = `The assignment is locked.${explanation ? ` ${explanation}` : ""}`;
+    } else if (allowed !== null && remaining === 0 && !redoRequested) {
+        // a redo request reopens the assignment, so leave that call to Canvas
+        blockedReason = `All ${allowed + extra} allowed attempts are used.`;
     }
+    return {
+        allowed,
+        extra,
+        used,
+        remaining,
+        redo_requested: redoRequested,
+        graded_attempt_is_current: field(record, "grade_matches_current_submission", isBoolean),
+        can_submit: blockedReason === undefined,
+        blocked_reason: blockedReason,
+    };
+}
+
+function extensionOf(filename: string): string {
+    return filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "";
+}
+
+// fail before uploading or submitting anything Canvas would refuse
+async function preflightSubmission(
+    canvas: CanvasClient,
+    assignmentPath: string,
+    submissionType: string,
+    filenames: readonly string[],
+): Promise<AttemptStatus> {
+    const [assignment, submission] = await Promise.all([
+        canvas.get<Record<string, unknown>>(assignmentPath),
+        canvas.get<Record<string, unknown>>(`${assignmentPath}/submissions/self`),
+    ]);
+    const types = Array.isArray(assignment?.submission_types) ? assignment.submission_types : [];
+    if (!types.includes(submissionType)) {
+        throw new Error(
+            `This assignment does not accept ${submissionType} (submission_types: ${types.join(", ") || "none"}).`,
+        );
+    }
+    const attempts = attemptStatus(assignment, submission);
+    if (attempts.blocked_reason) throw new Error(`Cannot submit: ${attempts.blocked_reason}`);
+
     const allowed = Array.isArray(assignment?.allowed_extensions)
         ? assignment.allowed_extensions.filter(isString).map((ext) => ext.toLowerCase().replace(/^\./, ""))
         : [];
-    const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "";
-    if (allowed.length > 0 && !allowed.includes(ext)) {
-        throw new Error(`This assignment only accepts ${allowed.join(", ")} files; got "${filename}".`);
-    }
+    const rejected = filenames.find((name) => allowed.length > 0 && !allowed.includes(extensionOf(name)));
+    if (rejected) throw new Error(`This assignment only accepts ${allowed.join(", ")} files; got "${rejected}".`);
+    return attempts;
 }
 
 export const submissionTools: ToolDef[] = [
@@ -190,10 +246,14 @@ export const submissionTools: ToolDef[] = [
         name: "canvas_submit_assignment",
         description:
             "Submit the authenticated student's work for an assignment. online_text_entry takes body, online_url takes url. " +
-            "online_upload takes either file_ids from earlier uploads, or one file to upload in the same call: file_path " +
-            "(read on the MCP server host, only inside CANVAS_UPLOAD_ROOTS) or content_base64 with filename (sent by the client). " +
-            "Uploads are checked against the assignment's submission types and allowed extensions first, and the result " +
-            "reports workflow_state, submitted_at, late and the attached files. media_recording is not supported.",
+            "online_upload takes file_ids from earlier uploads (canvas_upload_file target=submission), one file to upload in " +
+            "the same call, or both for a multi-file submission. A file comes from file_path (read on the MCP server host, " +
+            "only inside CANVAS_UPLOAD_ROOTS) or content_base64 with filename (sent by the client). " +
+            "Submitting again is a resubmission: Canvas records a new attempt that replaces the current one for grading and " +
+            "keeps earlier attempts in the submission history. There is no way to edit or delete a submitted file, so " +
+            "replacing a file means resubmitting. The submission type, lock state, attempts left and allowed extensions are " +
+            "checked first. The result reports workflow_state, submitted_at, late, attempt and attached files. " +
+            "media_recording is not supported.",
         inputSchema: z.object({
             course_id: canvasId,
             assignment_id: canvasId,
@@ -218,7 +278,8 @@ export const submissionTools: ToolDef[] = [
             const comment = args.comment !== undefined ? { comment: { text_comment: args.comment } } : {};
 
             if (args.submission_type !== "online_upload") {
-                const result = await canvas.post(`${base}/submissions`, {
+                const before = await preflightSubmission(canvas, base, args.submission_type, []);
+                const result = await canvas.post<Record<string, unknown>>(`${base}/submissions`, {
                     submission: {
                         submission_type: args.submission_type,
                         ...(args.body !== undefined ? { body: args.body } : {}),
@@ -226,19 +287,19 @@ export const submissionTools: ToolDef[] = [
                     },
                     ...comment,
                 });
-                return jsonResult(result);
+                return jsonResult({ ...summariseSubmission(result), previous_attempt: before.used });
             }
 
-            if ((args.file_ids === undefined) === !hasUploadSource(args)) {
-                throw new Error("online_upload needs either file_ids or one of file_path / content_base64.");
+            if (args.file_ids === undefined && !hasUploadSource(args)) {
+                throw new Error("online_upload needs file_ids, file_path or content_base64.");
             }
 
-            let fileIds: string[] = args.file_ids ?? [];
-            if (hasUploadSource(args)) {
-                const file = await readUploadSource(args, uploadRoots ?? []);
-                await assertAcceptsUpload(canvas, base, file.name);
+            const file = hasUploadSource(args) ? await readUploadSource(args, uploadRoots ?? []) : undefined;
+            const before = await preflightSubmission(canvas, base, "online_upload", file ? [file.name] : []);
+            const fileIds: string[] = [...(args.file_ids ?? [])];
+            if (file) {
                 const uploaded = await canvas.uploadFile(`${base}/submissions/self/files`, file);
-                fileIds = [uploaded.id];
+                fileIds.push(uploaded.id);
             }
 
             let submission = await canvas.post<Record<string, unknown>>(`${base}/submissions`, {
@@ -249,8 +310,8 @@ export const submissionTools: ToolDef[] = [
             if (!Array.isArray(submission?.attachments)) {
                 submission = await canvas.get<Record<string, unknown>>(`${base}/submissions/self`);
             }
-            const summary = summariseSubmission(submission);
-            const attachedIds = new Set(summary.attachments.map((file) => file.id));
+            const summary = { ...summariseSubmission(submission), previous_attempt: before.used };
+            const attachedIds = new Set(summary.attachments.map((attached) => attached.id));
             const missing = fileIds.filter((id) => !attachedIds.has(id));
             if (missing.length > 0) {
                 return {
@@ -264,7 +325,43 @@ export const submissionTools: ToolDef[] = [
             return jsonResult(summary);
         },
     },
-
+    {
+        name: "canvas_post_submission_comment",
+        description:
+            "Comment on a submission, optionally with files. user_id defaults to self, so a student can comment on their " +
+            "own submission; other user_ids need grading permission. Attach files with file_ids (from canvas_upload_file " +
+            "target=submission_comment) or one file to upload in the same call via file_path or content_base64 + filename. " +
+            "attempt ties the comment to a specific submission attempt.",
+        inputSchema: z.object({
+            course_id: canvasId,
+            assignment_id: canvasId,
+            user_id: canvasUserId.optional(),
+            comment: z.string(),
+            attempt: z.number().int().positive().optional(),
+            group_comment: z.boolean().optional(),
+            file_ids: z.array(canvasId).optional(),
+            ...uploadSourceFields,
+        }),
+        handler: async (args, { canvas, uploadRoots }) => {
+            const userId = args.user_id ?? "self";
+            const submissionPath = `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions/${userId}`;
+            const fileIds: string[] = [...(args.file_ids ?? [])];
+            if (hasUploadSource(args)) {
+                const file = await readUploadSource(args, uploadRoots ?? []);
+                const uploaded = await canvas.uploadFile(`${submissionPath}/comments/files`, file);
+                fileIds.push(uploaded.id);
+            }
+            const result = await canvas.put(submissionPath, {
+                comment: {
+                    text_comment: args.comment,
+                    ...(args.attempt !== undefined ? { attempt: args.attempt } : {}),
+                    ...(args.group_comment !== undefined ? { group_comment: args.group_comment } : {}),
+                    ...(fileIds.length > 0 ? { file_ids: fileIds } : {}),
+                },
+            });
+            return jsonResult(result);
+        },
+    },
     // ============================================================
     // EDUCATOR / ADMINISTRATOR TOOLS
     // ============================================================
@@ -303,25 +400,6 @@ export const submissionTools: ToolDef[] = [
             const result = await canvas.post(
                 `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions/update_grades`,
                 { grade_data: args.grade_data },
-            );
-            return jsonResult(result);
-        },
-    },
-    {
-        name: "canvas_post_submission_comment",
-        description: "Post a comment on a student's submission for an assignment. Requires educator permissions.",
-        inputSchema: z.object({
-            course_id: canvasId,
-            assignment_id: canvasId,
-            user_id: canvasId,
-            comment: z.string(),
-        }),
-        handler: async (args, { canvas }) => {
-            const result = await canvas.put(
-                `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions/${args.user_id}`,
-                {
-                    comment: { text_comment: args.comment },
-                },
             );
             return jsonResult(result);
         },

@@ -108,6 +108,19 @@ export class CanvasClient {
     }
 
     /**
+     * Runs a fixed GraphQL query. Canvas answers 200 with an `errors` array
+     * for bad queries, so that is surfaced as a CanvasError rather than data.
+     */
+    async graphql(query: string, variables: Record<string, unknown> = {}): Promise<unknown> {
+        const body = await this.post<{ data?: unknown; errors?: unknown }>("/api/graphql", { query, variables });
+        if (body && Array.isArray(body.errors) && body.errors.length > 0) {
+            const message = extractCanvasMessage(body.errors) ?? "unknown error";
+            throw new CanvasError(502, `Canvas GraphQL query failed: ${message}`, { body: body.errors });
+        }
+        return body?.data ?? null;
+    }
+
+    /**
      * Step 1 of Canvas's file upload flow. `initPath` picks the context, e.g.
      * /api/v1/users/self/files or a submissions/self/files endpoint. The slot's
      * signature is valid for about 30 minutes.

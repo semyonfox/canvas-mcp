@@ -4,6 +4,7 @@ import { assignmentTools } from "./assignments.js";
 import { courseworkTools } from "./coursework.js";
 import { submissionTools } from "./submissions.js";
 import { gradeTools } from "./grades.js";
+import { feedbackTools } from "./feedback.js";
 import { moduleTools } from "./modules.js";
 import { pageTools } from "./pages.js";
 import { calendarTools } from "./calendar.js";
@@ -23,6 +24,7 @@ export const allTools: ToolDef[] = [
     ...courseworkTools,
     ...submissionTools,
     ...gradeTools,
+    ...feedbackTools,
     ...moduleTools,
     ...pageTools,
     ...calendarTools,

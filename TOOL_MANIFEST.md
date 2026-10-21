@@ -1,6 +1,6 @@
 # Canvas MCP tool manifest
 
-This is the checked-in inventory for the runtime registry in `src/tools/index.ts`. It contains only tools that are registered by `src/server.ts`; it does not list planned, removed, or commented-out operations. The current catalog has **130 tools across 17 source modules**.
+This is the checked-in inventory for the runtime registry in `src/tools/index.ts`. It contains only tools that are registered by `src/server.ts`; it does not list planned, removed, or commented-out operations. The current catalog has **134 tools across 18 source modules**.
 
 Use MCP `tools/list` for the authoritative live descriptions, input schemas, titles, and safety annotations. This file is intentionally a compact name-level inventory so it stays auditable when Canvas's request fields evolve.
 
@@ -12,6 +12,9 @@ Use MCP `tools/list` for the authoritative live descriptions, input schemas, tit
 - `canvas_get_conversation` explicitly avoids Canvas's default “mark as read on fetch” behavior.
 - `canvas_upload_file` and `canvas_submit_assignment` (`online_upload`) run Canvas's three-step upload flow, taking bytes from an allowlisted server path (`CANVAS_UPLOAD_ROOTS`) or from the client as base64. `canvas_upload_file` can also hand out an upload slot for the client to post to directly. See the README section on file uploads.
 - `canvas_list_my_coursework` merges planner items with Canvas's missing-submissions list into one status row per assignment, quiz or graded discussion.
+- `canvas_submit_assignment` checks submission type, lock state, attempts left and extensions before submitting. Submitting again is a resubmission: Canvas has no API to edit or delete a submitted file.
+- `canvas_list_my_feedback` is the one tool that uses GraphQL, because it reads unread comment and grade flags without marking anything read. REST's `include[]=read_status` marks submissions read as a side effect.
+- `canvas_get_my_grade_breakdown` is a local calculation; it reports Canvas's own total alongside when the course exposes one.
 - Canvas permissions, not this catalog, determine whether a token may perform a mutating operation. Consult the [official Canvas REST documentation](https://developerdocs.instructure.com/services/canvas) for tenant-specific behavior and permissions.
 
 ## Registered tools
@@ -30,7 +33,11 @@ Use MCP `tools/list` for the authoritative live descriptions, input schemas, tit
 
 ### Grades (6)
 
-`canvas_get_my_grades`, `canvas_get_assignment_feedback`, `canvas_get_grading_standards`, `canvas_submit_grade`, `canvas_get_all_students_status`, `canvas_get_comprehensive_status`
+`canvas_get_my_grades`, `canvas_get_my_grade_breakdown`, `canvas_get_grading_standards`, `canvas_submit_grade`, `canvas_get_all_students_status`, `canvas_get_comprehensive_status`
+
+### Feedback (3)
+
+`canvas_get_assignment_feedback`, `canvas_list_my_feedback`, `canvas_mark_submission_read`
 
 ### Modules (14)
 
@@ -68,9 +75,9 @@ Use MCP `tools/list` for the authoritative live descriptions, input schemas, tit
 
 `canvas_get_my_profile`, `canvas_get_user_profile`, `canvas_get_my_settings`, `canvas_update_user_profile`, `canvas_update_my_settings`, `canvas_create_user`
 
-### Quizzes (13)
+### Quizzes (14)
 
-`canvas_list_quizzes`, `canvas_get_quiz`, `canvas_list_my_quiz_submissions`, `canvas_get_my_quiz_submission`, `canvas_create_quiz`, `canvas_update_quiz`, `canvas_delete_quiz`, `canvas_list_quiz_questions`, `canvas_create_quiz_question`, `canvas_update_quiz_question`, `canvas_delete_quiz_question`, `canvas_list_quiz_question_groups`, `canvas_start_quiz_attempt`
+`canvas_list_quizzes`, `canvas_get_quiz`, `canvas_list_my_quizzes`, `canvas_list_my_quiz_submissions`, `canvas_get_my_quiz_submission`, `canvas_create_quiz`, `canvas_update_quiz`, `canvas_delete_quiz`, `canvas_list_quiz_questions`, `canvas_create_quiz_question`, `canvas_update_quiz_question`, `canvas_delete_quiz_question`, `canvas_list_quiz_question_groups`, `canvas_start_quiz_attempt`
 
 ### Rubrics (9)
 

@@ -185,3 +185,20 @@ describe("CanvasClient pagination", () => {
         expect(fetch).toHaveBeenCalledTimes(1);
     });
 });
+
+describe("CanvasClient.graphql", () => {
+    it("posts the query and returns data", async () => {
+        const fetch = mockFetch([{ status: 200, body: { data: { user: { name: "S" } } } }]);
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+        await expect(client.graphql("query { user }", { id: "1" })).resolves.toEqual({ user: { name: "S" } });
+        const [url, init] = fetch.mock.calls[0];
+        expect(url).toBe("https://x.instructure.com/api/graphql");
+        expect(JSON.parse(init.body as string)).toEqual({ query: "query { user }", variables: { id: "1" } });
+    });
+
+    it("turns a 200 with GraphQL errors into a CanvasError", async () => {
+        const fetch = mockFetch([{ status: 200, body: { errors: [{ message: "Field 'nope' doesn't exist" }] } }]);
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+        await expect(client.graphql("query { nope }")).rejects.toThrow("Canvas GraphQL query failed: Field 'nope' doesn't exist");
+    });
+});

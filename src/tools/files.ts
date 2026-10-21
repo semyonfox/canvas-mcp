@@ -5,15 +5,16 @@ import { jsonResult } from "./types.js";
 import { hasUploadSource, readUploadSource, uploadSourceFields } from "./upload-source.js";
 
 function uploadInitPath(
-    target: "user" | "course" | "submission",
+    target: "user" | "course" | "submission" | "submission_comment",
     courseId: string | undefined,
     assignmentId: string | undefined,
 ): string {
     if (target === "user") return "/api/v1/users/self/files";
     if (!courseId) throw new Error(`course_id is required for target=${target}.`);
     if (target === "course") return `/api/v1/courses/${courseId}/files`;
-    if (!assignmentId) throw new Error("assignment_id is required for target=submission.");
-    return `/api/v1/courses/${courseId}/assignments/${assignmentId}/submissions/self/files`;
+    if (!assignmentId) throw new Error(`assignment_id is required for target=${target}.`);
+    const submission = `/api/v1/courses/${courseId}/assignments/${assignmentId}/submissions/self`;
+    return target === "submission" ? `${submission}/files` : `${submission}/comments/files`;
 }
 
 function downloadUrlResult(file: unknown, fileId: string | number) {
@@ -108,12 +109,13 @@ export const fileTools: ToolDef[] = [
         description:
             "Upload a file to Canvas. target=user puts it in the authenticated user's files, target=course in course files " +
             "(needs file-management permission), target=submission stages it for an assignment and returns a file id for " +
-            "canvas_submit_assignment file_ids. Send the bytes with file_path (on the MCP server host, inside CANVAS_UPLOAD_ROOTS) " +
-            "or content_base64 + filename. For a large file the server cannot read, pass filename + size without bytes to get " +
+            "canvas_submit_assignment file_ids, and target=submission_comment does the same for canvas_post_submission_comment. " +
+            "Send the bytes with file_path (on the MCP server host, inside CANVAS_UPLOAD_ROOTS) or content_base64 + filename. " +
+            "For a large file the server cannot read, pass filename + size without bytes to get " +
             "an upload slot instead: POST multipart to upload_url with every upload_params field and the file field last. " +
             "A 201 response is the file JSON (done); for a 3xx, call this tool again with confirm_location set to the Location header.",
         inputSchema: z.object({
-            target: z.enum(["user", "course", "submission"]),
+            target: z.enum(["user", "course", "submission", "submission_comment"]),
             course_id: canvasId.optional(),
             assignment_id: canvasId.optional(),
             ...uploadSourceFields,
@@ -128,8 +130,8 @@ export const fileTools: ToolDef[] = [
             }
 
             const initPath = uploadInitPath(args.target, args.course_id, args.assignment_id);
-            // submission files live outside the folder tree
-            const opts = args.target === "submission"
+            // submission and comment files live outside the folder tree
+            const opts = args.target === "submission" || args.target === "submission_comment"
                 ? {}
                 : {
                     onDuplicate: args.on_duplicate,
