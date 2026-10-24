@@ -100,10 +100,11 @@ describe("submission tools", () => {
 
     it("canvas_submit_assignment posts text entry submission", async () => {
         const post = vi.fn().mockResolvedValue({ id: 501, submission_type: "online_text_entry" });
+        const get = vi.fn().mockResolvedValue({ submission_types: ["online_text_entry", "online_url"] });
         const tool = findTool("canvas_submit_assignment");
         const result = await tool.handler(
             { course_id: 5, assignment_id: 10, submission_type: "online_text_entry", body: "My answer" },
-            { canvas: fakeCanvas({ post }) },
+            { canvas: fakeCanvas({ post, get }) },
         );
         expect(post).toHaveBeenCalledWith(
             "/api/v1/courses/5/assignments/10/submissions",
@@ -116,10 +117,11 @@ describe("submission tools", () => {
 
     it("canvas_submit_assignment posts url submission", async () => {
         const post = vi.fn().mockResolvedValue({ id: 502, submission_type: "online_url" });
+        const get = vi.fn().mockResolvedValue({ submission_types: ["online_text_entry", "online_url"] });
         const tool = findTool("canvas_submit_assignment");
         const result = await tool.handler(
             { course_id: 5, assignment_id: 10, submission_type: "online_url", url: "https://example.com" },
-            { canvas: fakeCanvas({ post }) },
+            { canvas: fakeCanvas({ post, get }) },
         );
         expect(post).toHaveBeenCalledWith(
             "/api/v1/courses/5/assignments/10/submissions",
@@ -128,32 +130,6 @@ describe("submission tools", () => {
             }),
         );
         expect(result.content[0].text).toContain("online_url");
-    });
-
-    it("canvas_submit_assignment returns stub for online_upload", async () => {
-        const post = vi.fn();
-        const tool = findTool("canvas_submit_assignment");
-        const result = await tool.handler(
-            { course_id: 5, assignment_id: 10, submission_type: "online_upload" },
-            { canvas: fakeCanvas({ post }) },
-        );
-        expect(post).not.toHaveBeenCalled();
-        expect(result.content[0].text).toContain("multi-step flow");
-        expect(result.content[0].text).toContain("file_ids");
-        expect(result.isError).toBe(true);
-    });
-
-    it("canvas_submit_assignment returns stub for media_recording", async () => {
-        const post = vi.fn();
-        const tool = findTool("canvas_submit_assignment");
-        const result = await tool.handler(
-            { course_id: 5, assignment_id: 10, submission_type: "media_recording" },
-            { canvas: fakeCanvas({ post }) },
-        );
-        expect(post).not.toHaveBeenCalled();
-        expect(result.content[0].text).toContain("multi-step flow");
-        expect(result.content[0].text).toContain("Kaltura");
-        expect(result.isError).toBe(true);
     });
 
     it("canvas_grade_submission puts grade to submission endpoint", async () => {

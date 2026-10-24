@@ -88,7 +88,14 @@ function errorResult(error: unknown) {
  * factory once per exchange in the 2026-07-28 era, keeping Canvas credentials
  * and HTTP request state out of long-lived MCP sessions.
  */
-export function createCanvasMcpServer(getCanvasClient: CanvasClientProvider): McpServer {
+export interface CanvasMcpServerOptions {
+    uploadRoots?: readonly string[];
+}
+
+export function createCanvasMcpServer(
+    getCanvasClient: CanvasClientProvider,
+    options: CanvasMcpServerOptions = {},
+): McpServer {
     const server = new McpServer(
         { name: SERVER_NAME, version: SERVER_VERSION },
         {
@@ -114,7 +121,10 @@ export function createCanvasMcpServer(getCanvasClient: CanvasClientProvider): Mc
             },
             async (args) => {
                 try {
-                    const result = await tool.handler(args, { canvas: getCanvasClient() });
+                    const result = await tool.handler(args, {
+                        canvas: getCanvasClient(),
+                        uploadRoots: options.uploadRoots ?? [],
+                    });
                     return asMcpResult(result);
                 } catch (error) {
                     return errorResult(error);

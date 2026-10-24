@@ -3,6 +3,68 @@ import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
 
+const DAY_MS = 86_400_000;
+const QUIZ_FETCH_CONCURRENCY = 5;
+
+const idString = z.union([z.string(), z.number()]).transform(String);
+const optionalText = z.string().nullable().optional();
+const optionalNumber = z.number().nullable().optional();
+
+const quizSchema = z.looseObject({
+    id: idString,
+    title: z.string().optional(),
+    assignment_id: idString.nullable().optional(),
+    due_at: optionalText,
+    lock_at: optionalText,
+    unlock_at: optionalText,
+    time_limit: optionalNumber,
+    allowed_attempts: optionalNumber,
+    points_possible: optionalNumber,
+    hide_results: optionalText,
+    locked_for_user: z.boolean().optional(),
+    lock_explanation: optionalText,
+    published: z.boolean().optional(),
+});
+
+const quizSubmissionSchema = z.looseObject({
+    attempt: optionalNumber,
+    extra_attempts: optionalNumber,
+    attempts_left: optionalNumber,
+    workflow_state: z.string().optional(),
+    score: optionalNumber,
+    kept_score: optionalNumber,
+    finished_at: optionalText,
+    end_at: optionalText,
+});
+
+const plannerQuizSchema = z.looseObject({
+    plannable_type: z.string(),
+    plannable_id: idString,
+    course_id: idString.optional(),
+    context_name: z.string().optional(),
+});
+
+async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+    const results: R[] = new Array(items.length);
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (next < items.length) {
+            const index = next++;
+            results[index] = await fn(items[index]!);
+        }
+    });
+    await Promise.all(workers);
+    return results;
+}
+
+function quizStatus(quiz: z.infer<typeof quizSchema>, submission: z.infer<typeof quizSubmissionSchema> | undefined): string {
+    // "untaken" is Canvas's name for an attempt that is started but not handed in
+    if (submission?.workflow_state === "untaken") return "in_progress";
+    if (submission?.workflow_state === "pending_review") return "pending_review";
+    if (submission?.workflow_state === "complete") return "submitted";
+    return quiz.locked_for_user ? "locked" : "not_started";
+}
+
 export const quizTools: ToolDef[] = [
     {
         name: "canvas_list_quizzes",
@@ -58,6 +120,87 @@ export const quizTools: ToolDef[] = [
                 ? response
                 : response?.quiz_submissions ?? [];
             return jsonResult(submissions);
+        },
+    },
+    {
+        name: "canvas_list_my_quizzes",
+        description:
+            "Classic quizzes with the authenticated student's attempt status: not_started, in_progress, submitted, " +
+            "pending_review or locked, plus attempts used and left, time limit, kept and latest score, and when results are " +
+            "hidden. With course_id it covers every quiz in that course; without it, quizzes due in the date window " +
+            "across all courses. New Quizzes are assignments, so they show in canvas_list_my_coursework instead.",
+        inputSchema: z.object({
+            course_id: canvasId.optional(),
+            days_ahead: z.number().int().min(0).max(365).default(14),
+            days_back: z.number().int().min(0).max(365).default(14),
+        }),
+        handler: async (args, { canvas }) => {
+            let targets: Array<{ courseId: string; course: string | undefined; quizId: string; quiz?: unknown }>;
+            if (args.course_id) {
+                const quizzes = await canvas.collectPaginated<unknown>(`/api/v1/courses/${args.course_id}/quizzes`, { per_page: 100 });
+                targets = quizzes.map((quiz) => ({
+                    courseId: args.course_id,
+                    course: undefined,
+                    quizId: quizSchema.parse(quiz).id,
+                    quiz,
+                }));
+            } else {
+                const now = Date.now();
+                const items = await canvas.collectPaginated<unknown>("/api/v1/planner/items", {
+                    per_page: 100,
+                    start_date: new Date(now - args.days_back * DAY_MS).toISOString(),
+                    end_date: new Date(now + args.days_ahead * DAY_MS).toISOString(),
+                });
+                targets = items.flatMap((raw) => {
+                    const item = plannerQuizSchema.safeParse(raw);
+                    if (!item.success || item.data.plannable_type !== "quiz" || !item.data.course_id) return [];
+                    return [{ courseId: item.data.course_id, course: item.data.context_name, quizId: item.data.plannable_id }];
+                });
+            }
+
+            const rows = await mapWithLimit(targets, QUIZ_FETCH_CONCURRENCY, async (target) => {
+                const base = `/api/v1/courses/${target.courseId}/quizzes/${target.quizId}`;
+                try {
+                    const [rawQuiz, rawSubmission] = await Promise.all([
+                        target.quiz ?? canvas.get(base),
+                        canvas.get<{ quiz_submissions?: unknown[] }>(`${base}/submission`),
+                    ]);
+                    const quiz = quizSchema.parse(rawQuiz ?? {});
+                    const latest = rawSubmission?.quiz_submissions?.at(-1);
+                    const submission = latest === undefined ? undefined : quizSubmissionSchema.parse(latest);
+                    const allowed = quiz.allowed_attempts != null && quiz.allowed_attempts >= 0 ? quiz.allowed_attempts : null;
+                    const used = submission?.attempt ?? 0;
+                    return {
+                        course_id: target.courseId,
+                        course: target.course ?? null,
+                        quiz_id: quiz.id,
+                        assignment_id: quiz.assignment_id ?? null,
+                        title: quiz.title ?? null,
+                        status: quizStatus(quiz, submission),
+                        due_at: quiz.due_at ?? null,
+                        lock_at: quiz.lock_at ?? null,
+                        time_limit_minutes: quiz.time_limit ?? null,
+                        allowed_attempts: allowed,
+                        attempts_used: used,
+                        attempts_left: submission?.attempts_left
+                            ?? (allowed === null ? null : Math.max(allowed + (submission?.extra_attempts ?? 0) - used, 0)),
+                        kept_score: submission?.kept_score ?? null,
+                        latest_score: submission?.score ?? null,
+                        points_possible: quiz.points_possible ?? null,
+                        // canvas uses null, "always" or "until_after_last_attempt"
+                        results_hidden: quiz.hide_results ?? "never",
+                        ...(submission?.workflow_state === "untaken" && submission.end_at ? { attempt_ends_at: submission.end_at } : {}),
+                        ...(quiz.locked_for_user && quiz.lock_explanation ? { lock_explanation: quiz.lock_explanation } : {}),
+                    };
+                } catch (error) {
+                    return {
+                        course_id: target.courseId,
+                        quiz_id: target.quizId,
+                        error: error instanceof Error ? error.message : "Could not read this quiz.",
+                    };
+                }
+            });
+            return jsonResult(rows);
         },
     },
     {

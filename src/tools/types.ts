@@ -4,6 +4,8 @@ import type { CanvasClient } from "../canvas/client.js";
 
 export interface ToolContext {
     canvas: CanvasClient;
+    /** directories file_path uploads may read from; empty disables server-side paths */
+    uploadRoots?: readonly string[];
 }
 
 // The registry stores heterogeneous Zod schemas. Keep its erased boundary as

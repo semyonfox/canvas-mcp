@@ -2,6 +2,42 @@ import { z } from "zod";
 import { canvasId } from "./canvas-id.js";
 import type { ToolDef } from "./types.js";
 import { jsonResult } from "./types.js";
+import { courseScore, type GradeGroup, neededOnRemaining, scoreGroup } from "./grade-calc.js";
+
+const idString = z.union([z.string(), z.number()]).transform(String);
+
+const assignmentGroupSchema = z.looseObject({
+    id: idString,
+    name: z.string(),
+    group_weight: z.number().nullable().optional(),
+    rules: z.looseObject({
+        drop_lowest: z.number().optional(),
+        drop_highest: z.number().optional(),
+        never_drop: z.array(idString).optional(),
+    }).nullable().optional(),
+    assignments: z.array(z.looseObject({
+        id: idString,
+        name: z.string(),
+        points_possible: z.number().nullable().optional(),
+        omit_from_final_grade: z.boolean().optional(),
+        grading_type: z.string().optional(),
+        submission: z.looseObject({
+            score: z.number().nullable().optional(),
+            excused: z.boolean().nullable().optional(),
+        }).nullable().optional(),
+    })).optional(),
+});
+
+const courseTotalsSchema = z.looseObject({
+    apply_assignment_group_weights: z.boolean().optional(),
+    enrollments: z.array(z.looseObject({
+        type: z.string().optional(),
+        computed_current_score: z.number().nullable().optional(),
+        computed_final_score: z.number().nullable().optional(),
+    })).optional(),
+});
+
+const round = (value: number | null): number | null => (value === null ? null : Math.round(value * 100) / 100);
 
 export const gradeTools: ToolDef[] = [
     {
@@ -27,22 +63,97 @@ export const gradeTools: ToolDef[] = [
         },
     },
     {
-        name: "canvas_get_assignment_feedback",
+        name: "canvas_get_my_grade_breakdown",
         description:
-            "Get grading feedback for a specific assignment submission, including submission comments and rubric assessment.",
+            "Break down the authenticated student's grade in one course by assignment group, and answer what-if questions. " +
+            "what_if substitutes hypothetical scores (points) for any assignments. target_percent reports the average " +
+            "percentage needed on all still-ungraded work to finish there. current_percent ignores ungraded work and " +
+            "final_percent counts it as zero, like Canvas. This is a local calculation: drop rules are approximated and " +
+            "grading periods are not weighted separately, so Canvas's own total is included for comparison when the course shows it.",
         inputSchema: z.object({
             course_id: canvasId,
-            assignment_id: canvasId,
-            include: z.array(z.string()).optional(),
+            what_if: z.array(z.object({ assignment_id: canvasId, score: z.number().min(0) })).optional(),
+            target_percent: z.number().min(0).max(200).optional(),
         }),
         handler: async (args, { canvas }) => {
-            const submission = await canvas.get(
-                `/api/v1/courses/${args.course_id}/assignments/${args.assignment_id}/submissions/self`,
-                {
-                    include: args.include ?? ["submission_comments", "rubric_assessment"],
-                },
+            const [rawCourse, rawGroups] = await Promise.all([
+                canvas.get(`/api/v1/courses/${args.course_id}`, { include: ["total_scores"] }),
+                canvas.collectPaginated<unknown>(`/api/v1/courses/${args.course_id}/assignment_groups`, {
+                    per_page: 100,
+                    include: ["assignments", "submission"],
+                }),
+            ]);
+            const course = courseTotalsSchema.parse(rawCourse ?? {});
+            const weighted = course.apply_assignment_group_weights ?? false;
+            const whatIf = new Map<string, number>(
+                (args.what_if ?? []).map((entry: { assignment_id: string; score: number }) => [entry.assignment_id, entry.score]),
             );
-            return jsonResult(submission);
+            const applied: string[] = [];
+
+            const groups: GradeGroup[] = rawGroups.map((raw) => {
+                const group = assignmentGroupSchema.parse(raw);
+                return {
+                    id: group.id,
+                    name: group.name,
+                    weight: group.group_weight ?? 0,
+                    drop_lowest: group.rules?.drop_lowest ?? 0,
+                    drop_highest: group.rules?.drop_highest ?? 0,
+                    never_drop: new Set(group.rules?.never_drop ?? []),
+                    items: (group.assignments ?? [])
+                        .filter((a) => !a.omit_from_final_grade && a.grading_type !== "not_graded" && a.points_possible != null)
+                        .map((a) => {
+                            const hypothetical = whatIf.get(a.id);
+                            if (hypothetical !== undefined) applied.push(a.name);
+                            return {
+                                id: a.id,
+                                name: a.name,
+                                points_possible: a.points_possible ?? 0,
+                                score: hypothetical ?? a.submission?.score ?? null,
+                                excused: hypothetical === undefined && a.submission?.excused === true,
+                            };
+                        }),
+                };
+            });
+
+            const unknownWhatIf = [...whatIf.keys()].filter(
+                (id) => !groups.some((group) => group.items.some((item) => item.id === id)),
+            );
+            const enrollment = course.enrollments?.find((e) => e.type === "student" || e.type === "StudentEnrollment");
+            const needed = args.target_percent !== undefined
+                ? neededOnRemaining(groups, weighted, args.target_percent)
+                : undefined;
+
+            return jsonResult({
+                weighted,
+                current_percent: round(courseScore(groups, weighted, undefined)),
+                final_percent: round(courseScore(groups, weighted, 0)),
+                canvas_current_score: enrollment?.computed_current_score ?? null,
+                groups: groups.map((group) => {
+                    const current = scoreGroup(group, undefined);
+                    return {
+                        name: group.name,
+                        weight: weighted ? group.weight : null,
+                        current_percent: round(current.percent),
+                        earned: round(current.earned),
+                        possible: round(current.possible),
+                        ungraded: group.items.filter((item) => !item.excused && item.score === null).length,
+                        dropped: current.dropped,
+                    };
+                }),
+                ...(applied.length > 0 ? { what_if_applied: applied } : {}),
+                ...(unknownWhatIf.length > 0 ? { what_if_not_found: unknownWhatIf } : {}),
+                ...(args.target_percent !== undefined
+                    ? {
+                        target: {
+                            target_percent: args.target_percent,
+                            needed_percent_on_remaining: needed == null ? null : round(needed * 100),
+                            status: needed == null
+                                ? "nothing left to grade"
+                                : needed <= 0 ? "already secured" : needed > 1 ? "out of reach without extra credit" : "reachable",
+                        },
+                    }
+                    : {}),
+            });
         },
     },
     {

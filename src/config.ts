@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 
 const envSchema = z.object({
@@ -5,6 +6,7 @@ const envSchema = z.object({
     CANVAS_DOMAIN: z.string().optional(),
     CANVAS_ALLOWED_DOMAINS: z.string().optional(),
     CANVAS_ALLOW_REQUEST_CREDENTIALS: z.enum(["true", "false"]).optional(),
+    CANVAS_UPLOAD_ROOTS: z.string().optional(),
     HOST: z.string().optional(),
     MCP_ALLOWED_HOSTS: z.string().optional(),
     MCP_ALLOWED_ORIGINS: z.string().optional(),
@@ -21,6 +23,7 @@ export interface Config {
     canvasDomain: string | undefined;
     allowedCanvasDomains: readonly string[];
     allowRequestCredentials: boolean;
+    uploadRoots: readonly string[];
     host: string;
     allowedHosts: readonly string[];
     allowedOrigins: readonly string[];
@@ -127,6 +130,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         );
     }
 
+    const uploadRoots = splitList(parsed.CANVAS_UPLOAD_ROOTS).map((root) => {
+        if (!isAbsolute(root)) throw new Error("CANVAS_UPLOAD_ROOTS entries must be absolute directory paths.");
+        return resolve(root);
+    });
+
     const host = optionalText(parsed.HOST) ?? "127.0.0.1";
     const allowedHosts = splitList(parsed.MCP_ALLOWED_HOSTS).map(normaliseHost);
     if (!isLoopbackHost(host) && allowedHosts.length === 0) {
@@ -140,6 +148,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         canvasDomain,
         allowedCanvasDomains: [...allowedCanvasDomains],
         allowRequestCredentials,
+        uploadRoots,
         host,
         allowedHosts,
         allowedOrigins,

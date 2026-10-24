@@ -1,8 +1,10 @@
 import type { ToolDef } from "./types.js";
 import { courseTools } from "./courses.js";
 import { assignmentTools } from "./assignments.js";
+import { courseworkTools } from "./coursework.js";
 import { submissionTools } from "./submissions.js";
 import { gradeTools } from "./grades.js";
+import { feedbackTools } from "./feedback.js";
 import { moduleTools } from "./modules.js";
 import { pageTools } from "./pages.js";
 import { calendarTools } from "./calendar.js";
@@ -19,8 +21,10 @@ import { progressTools } from "./progress.js";
 export const allTools: ToolDef[] = [
     ...courseTools,
     ...assignmentTools,
+    ...courseworkTools,
     ...submissionTools,
     ...gradeTools,
+    ...feedbackTools,
     ...moduleTools,
     ...pageTools,
     ...calendarTools,

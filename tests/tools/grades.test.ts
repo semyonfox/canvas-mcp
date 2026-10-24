@@ -44,25 +44,6 @@ describe("grade tools", () => {
         expect(parsed).toHaveLength(2);
     });
 
-    it("canvas_get_assignment_feedback hits the submission/self endpoint", async () => {
-        const get = vi.fn().mockResolvedValue({
-            id: 77,
-            assignment_id: 5,
-            grade: "B+",
-            submission_comments: [{ comment: "Good work" }],
-        });
-        const tool = findTool("canvas_get_assignment_feedback");
-        const result = await tool.handler(
-            { course_id: 42, assignment_id: 5 },
-            { canvas: fakeCanvas({ get }) },
-        );
-        expect(get).toHaveBeenCalledWith(
-            "/api/v1/courses/42/assignments/5/submissions/self",
-            expect.any(Object),
-        );
-        expect(result.content[0].text).toContain("Good work");
-    });
-
     it("canvas_get_grading_standards calls collectPaginated for course grading standards", async () => {
         const collect = vi.fn().mockResolvedValue([
             { id: 3, title: "Letter Grade", grading_scheme: [{ name: "A", value: 0.94 }] },

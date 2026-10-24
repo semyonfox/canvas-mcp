@@ -41,12 +41,21 @@ describe("loadConfig", () => {
             canvasDomain: undefined,
             allowedCanvasDomains: [],
             allowRequestCredentials: false,
+            uploadRoots: [],
             host: "127.0.0.1",
             allowedHosts: [],
             allowedOrigins: [],
             port: 3001,
             logLevel: "info",
         });
+    });
+
+    it("accepts only absolute upload roots", () => {
+        expect(loadConfig({ CANVAS_UPLOAD_ROOTS: "/srv/uploads/, /home/me/Documents" }).uploadRoots)
+            .toEqual(["/srv/uploads", "/home/me/Documents"]);
+        expect(() => loadConfig({ CANVAS_UPLOAD_ROOTS: "Documents" })).toThrow(
+            "CANVAS_UPLOAD_ROOTS entries must be absolute directory paths.",
+        );
     });
 
     it("requires the default Canvas token and domain as one credential pair", () => {
