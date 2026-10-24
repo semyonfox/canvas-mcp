@@ -1,7 +1,7 @@
 overrides:
   hono: ^4.13.7
   qs: 6.15.2
-  vite: 8.0.16
+  vite: 8.3.4
 
 allowBuilds:
   esbuild: true
