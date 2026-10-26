@@ -37,7 +37,7 @@ Claude Code:
 claude mcp add canvas \
   -e CANVAS_API_TOKEN=your-token \
   -e CANVAS_DOMAIN=your-school.instructure.com \
-  -- npx -y --package=https://github.com/semyonfox/canvas-mcp/releases/download/v0.3.0/semyonfox-canvas-mcp-0.3.0.tgz canvas-mcp
+  -- npx -y --allow-remote=all --package=https://github.com/semyonfox/canvas-mcp/releases/download/v0.3.0/semyonfox-canvas-mcp-0.3.0.tgz canvas-mcp
 ```
 
 Claude Desktop, in `claude_desktop_config.json` (Settings, then Developer, then Edit Config):
@@ -49,6 +49,7 @@ Claude Desktop, in `claude_desktop_config.json` (Settings, then Developer, then 
       "command": "npx",
       "args": [
         "-y",
+        "--allow-remote=all",
         "--package=https://github.com/semyonfox/canvas-mcp/releases/download/v0.3.0/semyonfox-canvas-mcp-0.3.0.tgz",
         "canvas-mcp"
       ],
@@ -66,14 +67,14 @@ Codex, in `~/.codex/config.toml`:
 ```toml
 [mcp_servers.canvas]
 command = "npx"
-args = ["-y", "--package=https://github.com/semyonfox/canvas-mcp/releases/download/v0.3.0/semyonfox-canvas-mcp-0.3.0.tgz", "canvas-mcp"]
+args = ["-y", "--allow-remote=all", "--package=https://github.com/semyonfox/canvas-mcp/releases/download/v0.3.0/semyonfox-canvas-mcp-0.3.0.tgz", "canvas-mcp"]
 
 [mcp_servers.canvas.env]
 CANVAS_API_TOKEN = "your-token"
 CANVAS_DOMAIN = "your-school.instructure.com"
 ```
 
-The command-line forms (`claude mcp add`, `codex mcp add`) put the token in your shell history. Editing the config file directly avoids that.
+`--allow-remote=all` lets npm 12 and later install a package from a URL, which they refuse by default. Older npm versions accept it too. The command-line forms (`claude mcp add`, `codex mcp add`) put the token in your shell history. Editing the config file directly avoids that.
 
 **3. Ask something.** Restart the client and try "what's due this week?" or "show me my grades".
 
