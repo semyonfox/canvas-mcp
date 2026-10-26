@@ -17,6 +17,13 @@ const CANVAS_ACCEPT_HEADER = "application/json+canvas-string-ids";
 const MAX_READ_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 200;
 const MAX_RETRY_DELAY_MS = 5_000;
+// Canvas throttles per token with a leaky bucket, and parallel requests drain it fastest
+const MAX_CONCURRENT_REQUESTS = 4;
+const MAX_THROTTLE_RETRIES = 3;
+const THROTTLE_RETRY_BASE_DELAY_MS = 1_000;
+// X-Rate-Limit-Remaining starts around 700, so below this the bucket is nearly full
+const LOW_RATE_LIMIT_REMAINING = 100;
+const LOW_RATE_LIMIT_PAUSE_MS = 1_000;
 
 export interface UploadFile {
     name: string;
@@ -69,6 +76,9 @@ export class CanvasClient {
     private readonly token: string;
     private readonly fetchImpl: FetchLike;
     private readonly timeoutMs: number;
+    private activeRequests = 0;
+    private readonly waitingRequests: Array<() => void> = [];
+    private pauseUntil = 0;
 
     constructor(opts: CanvasClientOptions) {
         this.baseUrl = `https://${opts.domain}`;
@@ -253,7 +263,7 @@ export class CanvasClient {
         this.assertCanvasOrigin(url, label);
         const headers = new Headers({ authorization: `Bearer ${this.token}`, accept: CANVAS_ACCEPT_HEADER });
         const init = (): RequestInit => ({ method: "GET", headers, signal: AbortSignal.timeout(this.timeoutMs) });
-        const res = await this.fetchWithReadRetries(url, init);
+        const res = await this.fetchWithRetries(url, init, true);
         if (!res.ok) {
             throw await this.toCanvasError(res, `${label} fetch`);
         }
@@ -275,9 +285,8 @@ export class CanvasClient {
             ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
         });
 
-        const res = opts.method === "GET"
-            ? await this.fetchWithReadRetries(url, init)
-            : await this.fetchImpl(url, init());
+        // a 5xx write may already have been applied, so only reads retry it
+        const res = await this.fetchWithRetries(url, init, opts.method === "GET");
 
         if (!res.ok) {
             throw await this.toCanvasError(res, `${opts.method} ${path}`);
@@ -285,12 +294,57 @@ export class CanvasClient {
         return res;
     }
 
-    private async fetchWithReadRetries(url: string, init: () => RequestInit): Promise<Response> {
+    private async fetchWithRetries(
+        url: string,
+        init: () => RequestInit,
+        retryServerErrors: boolean,
+    ): Promise<Response> {
         for (let attempt = 0; ; attempt += 1) {
-            const res = await this.fetchImpl(url, init());
-            if (!isRetryableReadResponse(res.status) || attempt >= MAX_READ_RETRIES) return res;
-            await sleep(retryDelayMs(res, attempt));
+            const res = await this.send(url, init);
+            // Canvas refuses a throttled request before running it, so even a write is safe to resend
+            if (await isThrottled(res)) {
+                if (attempt >= MAX_THROTTLE_RETRIES) return res;
+                await res.body?.cancel();
+                await sleep(retryDelayMs(res, attempt, THROTTLE_RETRY_BASE_DELAY_MS));
+                continue;
+            }
+            if (!retryServerErrors || !isServerError(res.status) || attempt >= MAX_READ_RETRIES) return res;
+            await res.body?.cancel();
+            await sleep(retryDelayMs(res, attempt, RETRY_BASE_DELAY_MS));
         }
+    }
+
+    // every Canvas request goes through here so one client never floods the tenant
+    private async send(url: string, init: () => RequestInit): Promise<Response> {
+        await this.acquireRequestSlot();
+        try {
+            const pause = this.pauseUntil - Date.now();
+            if (pause > 0) await sleep(pause);
+            // init runs after queueing so the timeout only covers the request itself
+            const res = await this.fetchImpl(url, init());
+            const remaining = res.headers.get("x-rate-limit-remaining");
+            if (remaining !== null && Number(remaining) < LOW_RATE_LIMIT_REMAINING) {
+                this.pauseUntil = Date.now() + LOW_RATE_LIMIT_PAUSE_MS;
+            }
+            return res;
+        } finally {
+            this.releaseRequestSlot();
+        }
+    }
+
+    private async acquireRequestSlot(): Promise<void> {
+        if (this.activeRequests < MAX_CONCURRENT_REQUESTS) {
+            this.activeRequests += 1;
+            return;
+        }
+        await new Promise<void>((resolve) => this.waitingRequests.push(resolve));
+    }
+
+    private releaseRequestSlot(): void {
+        // hand the slot straight to the next waiter so the count stays accurate
+        const next = this.waitingRequests.shift();
+        if (next) next();
+        else this.activeRequests -= 1;
     }
 
     // the bearer token must only ever travel to the configured Canvas origin
@@ -328,14 +382,22 @@ export class CanvasClient {
     }
 }
 
-function isRetryableReadResponse(status: number): boolean {
-    return status === 429 || (status >= 500 && status < 600);
+function isServerError(status: number): boolean {
+    return status >= 500 && status < 600;
 }
 
-function retryDelayMs(res: Response, attempt: number): number {
+// Canvas signals throttling with 403 "Rate Limit Exceeded" rather than 429
+async function isThrottled(res: Response): Promise<boolean> {
+    if (res.status === 429) return true;
+    if (res.status !== 403) return false;
+    const body = await res.clone().text().catch(() => "");
+    return body.toLowerCase().includes("rate limit exceeded");
+}
+
+function retryDelayMs(res: Response, attempt: number, baseDelayMs: number): number {
     const retryAfter = retryAfterMs(res.headers.get("retry-after"));
     if (retryAfter !== undefined) return retryAfter;
-    return Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS);
+    return Math.min(baseDelayMs * 2 ** attempt, MAX_RETRY_DELAY_MS);
 }
 
 function retryAfterMs(value: string | null): number | undefined {

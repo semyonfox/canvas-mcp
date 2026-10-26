@@ -7,6 +7,13 @@ import {
 } from "../src/config.js";
 
 describe("loadConfig", () => {
+    it("keeps writes off unless CANVAS_ENABLE_WRITES is exactly true", () => {
+        expect(loadConfig({}).enableWrites).toBe(false);
+        expect(loadConfig({ CANVAS_ENABLE_WRITES: "false" }).enableWrites).toBe(false);
+        expect(loadConfig({ CANVAS_ENABLE_WRITES: "true" }).enableWrites).toBe(true);
+        expect(() => loadConfig({ CANVAS_ENABLE_WRITES: "yes" })).toThrow();
+    });
+
     it("parses and normalises an explicit Canvas deployment", () => {
         const cfg = loadConfig({
             CANVAS_API_TOKEN: "tok",

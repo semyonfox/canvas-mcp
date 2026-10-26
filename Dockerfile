@@ -3,8 +3,10 @@
 FROM node:26-bookworm-slim@sha256:367679cf9792759492a486e4aa4b421764d71a9546a6dae8aab81a99eb797b3e AS build
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# node 26 no longer bundles corepack, which reads the pnpm pin from package.json
 RUN --mount=type=cache,id=canvas-mcp-pnpm-store,target=/pnpm/store \
-    corepack enable \
+    npm install -g corepack@0.36.0 \
+    && corepack enable \
     && pnpm config set store-dir /pnpm/store \
     && pnpm install --frozen-lockfile
 COPY tsconfig.json ./
@@ -19,4 +21,4 @@ COPY package.json ./
 ENV NODE_ENV=production
 EXPOSE 3001
 USER nonroot
-CMD ["dist/index.js"]
+CMD ["dist/index.js", "--http"]

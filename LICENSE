@@ -2,20 +2,6 @@ MIT License
 
 Copyright (c) 2026 Semyon Fox
 
-This project incorporates ideas and patterns from the following projects:
-- vishalsachdev/canvas-mcp (MIT) - Copyright (c) vishalsachdev
-- DMontgomery40/mcp-canvas-lms (MIT) - Copyright (c) DMontgomery40
-- r-huijts/canvas-mcp (MIT) - Copyright (c) r-huijts
-- mtgibbs/canvas-lms-mcp (MIT) - Copyright (c) mtgibbs
-- ahnopologetic/canvas-lms-mcp (MIT) - Copyright (c) ahnopologetic
-- aryankeluskar/canvas-mcp (ISC) - Copyright (c) aryankeluskar
-- a-ariff/canvas-mcp (MIT) - Copyright (c) a-ariff
-- sweeden-ttu/canvas-lms-mcp (MIT) - Copyright (c) sweeden-ttu
-- Jon-Vii/canvas-student-mcp (MIT) - Copyright (c) Jon-Vii
-- Kuria-Mbatia/Canvas-MCP-server (MIT) - Copyright (c) Kuria-Mbatia
-- enkhbold470/mcp-server-canvas (MIT) - Copyright (c) enkhbold470
-- Shashwatpog/poke-canvas-mcp (MIT) - Copyright (c) Shashwatpog
-
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

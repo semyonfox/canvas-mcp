@@ -2,6 +2,8 @@
 
 This is the checked-in inventory for the runtime registry in `src/tools/index.ts`. It contains only tools that are registered by `src/server.ts`; it does not list planned, removed, or commented-out operations. The current catalog has **134 tools across 18 source modules**.
 
+By default only the 70 `canvas_get_*` and `canvas_list_*` tools are registered. The other 64 change Canvas state and need `CANVAS_ENABLE_WRITES=true`.
+
 Use MCP `tools/list` for the authoritative live descriptions, input schemas, titles, and safety annotations. This file is intentionally a compact name-level inventory so it stays auditable when Canvas's request fields evolve.
 
 ## Contract notes

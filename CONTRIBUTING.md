@@ -88,6 +88,8 @@ pnpm build
 
 Tool registration and MCP metadata are centralized in `src/server.ts`; an entry already present in `allTools` needs no per-tool router wiring. If a tool has unusual semantics, add an explicit `title` or MCP annotations to its `ToolDef` and cover them in a server-level test.
 
+The read-only default depends on naming. Only `canvas_get_*` and `canvas_list_*` tools are registered without `CANVAS_ENABLE_WRITES=true`, so name a tool that changes Canvas state (including marking something read) with a verb such as `create`, `update` or `mark`. `tests/server.test.ts` fails if a get or list tool calls a mutating client method.
+
 ## Live verification
 
 `scripts/verify-tools.mjs` is a representative, read-oriented integration smoke test. It discovers IDs from a real Canvas tenant and invokes selected non-mutating handlers; it does not claim to cover every registered tool or perform mutations.
@@ -101,6 +103,6 @@ Use a disposable least-privilege token. Its output can contain course and user d
 
 ## Transport changes
 
-Keep HTTP and protocol work in `src/http.ts` and `src/server.ts`. The public endpoint is `POST /mcp`; `GET /health` is the only health route. Modern MCP behavior is owned by the v2 SDK's `createMcpHandler`, including discovery and protocol headers. Preserve the stateless legacy mode unless a deliberate compatibility decision is documented and tested.
+`src/index.ts` picks the transport: stdio by default, HTTP with `--http`. Keep HTTP and protocol work in `src/http.ts` and `src/server.ts`. The public endpoint is `POST /mcp`; `GET /health` is the only health route. Modern MCP behavior is owned by the v2 SDK's `createMcpHandler`, including discovery and protocol headers. Preserve the stateless legacy mode unless a deliberate compatibility decision is documented and tested.
 
 Do not weaken the deployment defaults while adding a tool: non-loopback listeners require `MCP_ALLOWED_HOSTS`, browser origins require explicit `MCP_ALLOWED_ORIGINS`, and request-scoped Canvas credentials require both `CANVAS_ALLOW_REQUEST_CREDENTIALS=true` and an allowed Canvas domain.

@@ -71,7 +71,10 @@ export function createCanvasHttpServer(cfg: Config, options: HttpServerOptions =
                 }
                 return canvas;
             };
-            return createCanvasMcpServer(getCanvasClient, { uploadRoots: cfg.uploadRoots });
+            return createCanvasMcpServer(getCanvasClient, {
+                uploadRoots: cfg.uploadRoots,
+                enableWrites: cfg.enableWrites,
+            });
         },
         {
             // Retain the safe, per-request 2025 compatibility path while

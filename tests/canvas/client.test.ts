@@ -100,6 +100,58 @@ describe("CanvasClient.post", () => {
         expect((init.headers as Headers).get("authorization")).toBe("Bearer tok");
     });
 
+    it("retries Canvas's 403 rate-limit response, including for writes", async () => {
+        const throttled = () => new Response("403 Forbidden (Rate Limit Exceeded)", {
+            status: 403,
+            headers: { "retry-after": "0", "x-rate-limit-remaining": "500" },
+        });
+        const fetch = vi.fn()
+            .mockResolvedValueOnce(throttled())
+            .mockResolvedValueOnce(new Response(JSON.stringify({ id: 1 }), { status: 200 }));
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+
+        await expect(client.post("/api/v1/x", { value: true })).resolves.toEqual({ id: 1 });
+        expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry a 403 that is not throttling", async () => {
+        const fetch = mockFetch([{ status: 403, body: { errors: [{ message: "user not authorized" }] } }]);
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+
+        await expect(client.get("/api/v1/x")).rejects.toMatchObject({ status: 403 });
+        expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps at most four Canvas requests in flight", async () => {
+        let inFlight = 0;
+        let peak = 0;
+        const fetch = vi.fn(async () => {
+            inFlight += 1;
+            peak = Math.max(peak, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            inFlight -= 1;
+            return new Response("{}", { status: 200 });
+        });
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+
+        await Promise.all(Array.from({ length: 10 }, (_, i) => client.get(`/api/v1/x/${i}`)));
+        expect(fetch).toHaveBeenCalledTimes(10);
+        expect(peak).toBe(4);
+    });
+
+    it("pauses before the next request when the rate-limit budget runs low", async () => {
+        const fetch = vi.fn(async () => new Response("{}", {
+            status: 200,
+            headers: { "x-rate-limit-remaining": "42.5" },
+        }));
+        const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });
+
+        await client.get("/api/v1/a");
+        const started = Date.now();
+        await client.get("/api/v1/b");
+        expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+    });
+
     it("does not retry failed mutations", async () => {
         const fetch = mockFetch([{ status: 503, body: { error: "maintenance" } }]);
         const client = new CanvasClient({ domain: "x.instructure.com", token: "tok", fetch });

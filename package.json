@@ -1,7 +1,7 @@
 {
-  "name": "canvas-mcp",
-  "version": "0.2.0",
-  "description": "Unified MCP server for Canvas LMS",
+  "name": "@semyonfox/canvas-mcp",
+  "version": "0.3.0",
+  "description": "Read-only by default MCP server for Canvas LMS, for students using their own access token",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -32,8 +32,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js --http",
+    "dev": "tsx watch src/index.ts --http",
     "check": "pnpm test && pnpm typecheck && pnpm build",
     "prepack": "pnpm build",
     "test": "vitest run",
