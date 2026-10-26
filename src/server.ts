@@ -7,7 +7,7 @@ import { allTools } from "./tools/index.js";
 import type { ToolDef, ToolResult } from "./tools/types.js";
 
 export const SERVER_NAME = "canvas-mcp";
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.3.0";
 
 export type CanvasClientProvider = () => CanvasClient;
 
@@ -32,6 +32,11 @@ const DESTRUCTIVE_NAMES = new Set([
     "canvas_revert_page_revision",
 ]);
 
+/** get and list tools only issue Canvas reads, which tests/server.test.ts pins */
+export function isReadOnlyTool(tool: Pick<ToolDef, "name">): boolean {
+    return READ_ONLY_PREFIXES.some((prefix) => tool.name.startsWith(prefix));
+}
+
 function humaniseToolName(name: string): string {
     return `Canvas: ${name
         .replace(/^canvas_/, "")
@@ -41,7 +46,7 @@ function humaniseToolName(name: string): string {
 }
 
 function defaultAnnotations(tool: ToolDef): ToolAnnotations {
-    const readOnly = READ_ONLY_PREFIXES.some((prefix) => tool.name.startsWith(prefix));
+    const readOnly = isReadOnlyTool(tool);
     // MCP treats an omitted destructive hint conservatively. Only affirm that
     // a tool is non-destructive when it is actually read-only; updates and
     // state changes must not accidentally opt callers out of confirmation UX.
@@ -90,7 +95,14 @@ function errorResult(error: unknown) {
  */
 export interface CanvasMcpServerOptions {
     uploadRoots?: readonly string[];
+    /** registers create, update, delete, submit and message tools; off by default */
+    enableWrites?: boolean;
 }
+
+const READ_ONLY_INSTRUCTIONS =
+    "Use Canvas tools to read Canvas LMS data. Canvas identifiers are strings to preserve 64-bit IDs. This server is read-only: tools that change Canvas are not registered unless the user sets CANVAS_ENABLE_WRITES=true.";
+const READ_WRITE_INSTRUCTIONS =
+    "Use Canvas tools to inspect or change Canvas LMS data. Canvas identifiers are strings to preserve 64-bit IDs. Mutating tools may affect live coursework, so confirm with the user before calling one.";
 
 export function createCanvasMcpServer(
     getCanvasClient: CanvasClientProvider,
@@ -100,8 +112,7 @@ export function createCanvasMcpServer(
         { name: SERVER_NAME, version: SERVER_VERSION },
         {
             capabilities: { tools: {} },
-            instructions:
-                "Use Canvas tools to inspect or change Canvas LMS data. Canvas identifiers are strings to preserve 64-bit IDs. Mutating tools may affect live coursework.",
+            instructions: options.enableWrites ? READ_WRITE_INSTRUCTIONS : READ_ONLY_INSTRUCTIONS,
             cacheHints: {
                 "server/discover": { ttlMs: 300_000, cacheScope: "public" },
                 "tools/list": { ttlMs: 300_000, cacheScope: "public" },
@@ -109,7 +120,8 @@ export function createCanvasMcpServer(
         },
     );
 
-    for (const tool of allTools) {
+    const tools = options.enableWrites ? allTools : allTools.filter(isReadOnlyTool);
+    for (const tool of tools) {
         server.registerTool(
             tool.name,
             {

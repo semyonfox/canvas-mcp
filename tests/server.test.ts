@@ -2,20 +2,27 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CanvasClient } from "../src/canvas/client.js";
-import { createCanvasMcpServer, SERVER_NAME, SERVER_VERSION } from "../src/server.js";
+import {
+    createCanvasMcpServer,
+    isReadOnlyTool,
+    SERVER_NAME,
+    SERVER_VERSION,
+    type CanvasMcpServerOptions,
+} from "../src/server.js";
+import { allTools } from "../src/tools/index.js";
 
 interface CapturedRequest {
     headers: Headers;
     body: string;
 }
 
-async function createModernClient(canvasFetch = vi.fn()) {
+async function createModernClient(canvasFetch = vi.fn(), options: CanvasMcpServerOptions = {}) {
     const canvas = new CanvasClient({
         domain: "canvas.example.test",
         token: "test-token",
         fetch: canvasFetch,
     });
-    const handler = createMcpHandler(() => createCanvasMcpServer(() => canvas), {
+    const handler = createMcpHandler(() => createCanvasMcpServer(() => canvas, options), {
         legacy: "stateless",
         responseMode: "auto",
     });
@@ -54,7 +61,7 @@ describe("Canvas MCP v2 server", () => {
                 headers: { "content-type": "application/json" },
             }),
         );
-        const connection = await createModernClient(canvasFetch);
+        const connection = await createModernClient(canvasFetch, { enableWrites: true });
         closeables.push(connection);
 
         expect(connection.client.getProtocolEra()).toBe("modern");
@@ -99,5 +106,50 @@ describe("Canvas MCP v2 server", () => {
         expect(connection.requests[0]?.headers.get("mcp-method")).toBe("server/discover");
         expect(connection.requests.every((request) => !request.headers.has("mcp-session-id"))).toBe(true);
         expect(connection.requests.map((request) => JSON.parse(request.body).method)).not.toContain("initialize");
+    });
+
+    it("registers only read tools unless writes are enabled", async () => {
+        const readOnly = await createModernClient();
+        closeables.push(readOnly);
+        const names = (await readOnly.client.listTools()).tools.map((tool) => tool.name);
+
+        expect(names).toHaveLength(allTools.filter(isReadOnlyTool).length);
+        expect(names).toContain("canvas_list_my_coursework");
+        expect(names).not.toContain("canvas_submit_assignment");
+        expect(names).not.toContain("canvas_send_conversation");
+        expect(names).not.toContain("canvas_mark_module_item_read");
+        expect(readOnly.client.getInstructions()).toContain("read-only");
+
+        const readWrite = await createModernClient(vi.fn(), { enableWrites: true });
+        closeables.push(readWrite);
+        expect((await readWrite.client.listTools()).tools).toHaveLength(allTools.length);
+    });
+});
+
+describe("read-only tool classification", () => {
+    const READ_METHODS = new Set(["get", "getRaw", "getPaginated", "collectPaginated", "graphql"]);
+
+    it("never lets a get or list tool call a mutating Canvas method", async () => {
+        const offenders: string[] = [];
+        for (const tool of allTools.filter(isReadOnlyTool)) {
+            const called = new Set<string>();
+            const canvas = new Proxy({}, {
+                get: (_target, prop) => {
+                    const method = String(prop);
+                    if (method === "then") return undefined;
+                    called.add(method);
+                    if (method === "getPaginated") return async function* () {};
+                    return async () => (method === "collectPaginated" ? [] : null);
+                },
+            }) as CanvasClient;
+            // required arguments stay empty, so a handler may throw once it reaches one
+            const parsed = tool.inputSchema.safeParse({});
+            const args: unknown = parsed.success ? parsed.data : {};
+            await tool.handler(args, { canvas }).catch(() => undefined);
+            expect(called.size, `${tool.name} never reached Canvas`).toBeGreaterThan(0);
+            const writes = [...called].filter((method) => !READ_METHODS.has(method));
+            if (writes.length > 0) offenders.push(`${tool.name}: ${writes.join(", ")}`);
+        }
+        expect(offenders).toEqual([]);
     });
 });

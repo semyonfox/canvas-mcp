@@ -7,6 +7,7 @@ const envSchema = z.object({
     CANVAS_ALLOWED_DOMAINS: z.string().optional(),
     CANVAS_ALLOW_REQUEST_CREDENTIALS: z.enum(["true", "false"]).optional(),
     CANVAS_UPLOAD_ROOTS: z.string().optional(),
+    CANVAS_ENABLE_WRITES: z.enum(["true", "false"]).optional(),
     HOST: z.string().optional(),
     MCP_ALLOWED_HOSTS: z.string().optional(),
     MCP_ALLOWED_ORIGINS: z.string().optional(),
@@ -24,6 +25,7 @@ export interface Config {
     allowedCanvasDomains: readonly string[];
     allowRequestCredentials: boolean;
     uploadRoots: readonly string[];
+    enableWrites: boolean;
     host: string;
     allowedHosts: readonly string[];
     allowedOrigins: readonly string[];
@@ -149,6 +151,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         allowedCanvasDomains: [...allowedCanvasDomains],
         allowRequestCredentials,
         uploadRoots,
+        enableWrites: parsed.CANVAS_ENABLE_WRITES === "true",
         host,
         allowedHosts,
         allowedOrigins,
