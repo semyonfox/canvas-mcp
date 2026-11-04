@@ -144,7 +144,7 @@ describe("online_upload submission flow", () => {
             late: false,
             missing: false,
             seconds_late: 0,
-            attachments: [{ id: "900", display_name: "report.pdf", size: PDF.byteLength, content_type: "application/pdf" }],
+            attachments: [{ id: "900", display_name: "report.pdf", filename: "report.pdf", size: PDF.byteLength, content_type: "application/pdf" }],
             previous_attempt: 0,
         });
         expect(result.content[0]?.text).not.toContain("verifier");
@@ -276,11 +276,16 @@ describe("online_upload submission flow", () => {
         expect(result.structuredContent).toMatchObject({ previous_attempt: 1 });
     });
 
-    it("flags a submission that does not carry the uploaded file", async () => {
+    it("flags a submission that does not carry the requested file", async () => {
         const { canvas } = fakeNetwork([
             assignment(),
-            on("POST", `${API}/courses/5/assignments/10/submissions`, () =>
-                json(201, { id: "77", workflow_state: "submitted", attachments: [fileJson({ id: "111" })] })),
+            on("GET", `${API}/files/900`, () => json(200, fileJson())),
+            on("POST", SUBMIT_PATH, () =>
+                json(201, {
+                    id: "77",
+                    workflow_state: "submitted",
+                    attachments: [fileJson({ id: "111", filename: "other.pdf", display_name: "other.pdf" })],
+                })),
         ]);
 
         const result = await run(submissionTools, "canvas_submit_assignment", {
@@ -291,7 +296,61 @@ describe("online_upload submission flow", () => {
         }, canvas);
 
         expect(result.isError).toBe(true);
-        expect(result.content[0]?.text).toContain("900");
+        expect(result.content[0]?.text).toContain("file(s) 900 are not attached");
+    });
+
+    it("accepts copies Canvas attaches under new ids for files reused from an earlier submission", async () => {
+        // the 2026-11-04 case: the upload returned the old ids 3901686 and 3946236 because Canvas reused
+        // identical files, then the submit copied them onto the submission as 3970588 and 3970589
+        const cs = (id: string, name: string, size: number, displayName = name) =>
+            fileJson({ id, filename: name, display_name: displayName, size, "content-type": "text/x-csharp" });
+        const { canvas } = fakeNetwork([
+            assignment({ allowed_extensions: ["cs"] }),
+            on("GET", `${API}/files/3901686`, () => json(200, cs("3901686", "AsteroidFragment.cs", 1210))),
+            on("GET", `${API}/files/3946236`, () => json(200, cs("3946236", "Bullet.cs", 427))),
+            on("POST", SUBMIT_PATH, () =>
+                json(201, {
+                    id: "77",
+                    workflow_state: "submitted",
+                    attachments: [
+                        cs("3970580", "Ship.cs", 2048),
+                        cs("3970588", "AsteroidFragment.cs", 1210, "AsteroidFragment-2.cs"),
+                        cs("3970589", "Bullet.cs", 427, "Bullet-1.cs"),
+                    ],
+                })),
+        ]);
+
+        const result = await run(submissionTools, "canvas_submit_assignment", {
+            course_id: "5",
+            assignment_id: "10",
+            submission_type: "online_upload",
+            file_ids: ["3970580", "3901686", "3946236"],
+        }, canvas);
+
+        expect(result.isError).toBeUndefined();
+        expect(result.structuredContent).toMatchObject({
+            copied_file_ids: { "3901686": "3970588", "3946236": "3970589" },
+        });
+    });
+
+    it("does not count one copy for two requested files with the same name and size", async () => {
+        const { canvas } = fakeNetwork([
+            assignment(),
+            on("GET", `${API}/files/901`, () => json(200, fileJson({ id: "901" }))),
+            on("GET", `${API}/files/902`, () => json(200, fileJson({ id: "902" }))),
+            on("POST", SUBMIT_PATH, () =>
+                json(201, { id: "77", workflow_state: "submitted", attachments: [fileJson({ id: "950", display_name: "report-1.pdf" })] })),
+        ]);
+
+        const result = await run(submissionTools, "canvas_submit_assignment", {
+            course_id: "5",
+            assignment_id: "10",
+            submission_type: "online_upload",
+            file_ids: ["901", "902"],
+        }, canvas);
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain("file(s) 902 are not attached");
     });
 
     it("needs file_ids or a file source", async () => {
