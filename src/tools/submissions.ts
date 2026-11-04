@@ -18,7 +18,15 @@ export interface SubmissionSummary {
     late: boolean | undefined;
     missing: boolean | undefined;
     seconds_late: number | undefined;
-    attachments: Array<{ id: string; display_name?: string; size?: number; content_type?: string }>;
+    attachments: SubmissionAttachment[];
+}
+
+export interface SubmissionAttachment {
+    id: string;
+    display_name?: string;
+    filename?: string;
+    size?: number;
+    content_type?: string;
 }
 
 function field<T>(record: Record<string, unknown>, key: string, guard: (value: unknown) => value is T): T | undefined {
@@ -53,16 +61,56 @@ export function summariseSubmission(submission: Record<string, unknown> | null):
             const fileId = field(file, "id", isIdLike);
             if (fileId === undefined) return [];
             const displayName = field(file, "display_name", isString);
+            const filename = field(file, "filename", isString);
             const size = field(file, "size", isNumber);
             const contentType = field(file, "content-type", isString);
             return [{
                 id: String(fileId),
                 ...(displayName !== undefined ? { display_name: displayName } : {}),
+                ...(filename !== undefined ? { filename } : {}),
                 ...(size !== undefined ? { size } : {}),
                 ...(contentType !== undefined ? { content_type: contentType } : {}),
             }];
         }),
     };
+}
+
+const fileMetaSchema = z.looseObject({ filename: z.string().optional(), size: z.number().optional() });
+
+/**
+ * pair requested file ids with submission attachments. Canvas copies a file onto the
+ * submission under a new id when it sits outside the user's submissions folder or was
+ * already submitted (Attachment.copy_attachments_to_submissions_folder). The copy keeps
+ * filename and size but gets a new id and a renamed display_name, and the API does not
+ * expose the root_attachment_id link, so an unmatched id falls back to filename + size.
+ */
+export async function matchAttachments(
+    canvas: CanvasClient,
+    requestedIds: readonly string[],
+    attachments: readonly SubmissionAttachment[],
+    knownFiles: ReadonlyMap<string, { filename?: string; size?: number }> = new Map(),
+): Promise<{ missing: string[]; copied: Record<string, string> }> {
+    const unclaimed = attachments.filter((attached) => !requestedIds.includes(attached.id));
+    const missing: string[] = [];
+    const copied: Record<string, string> = {};
+    for (const id of requestedIds) {
+        if (attachments.some((attached) => attached.id === id)) continue;
+        // a failed lookup (deleted file, no access) leaves the id reported as missing
+        const meta = knownFiles.get(id) ?? await canvas
+            .get<unknown>(`/api/v1/files/${id}`)
+            .then((body) => fileMetaSchema.safeParse(body).data)
+            .catch(() => undefined);
+        const index = meta?.filename !== undefined && meta.size !== undefined
+            ? unclaimed.findIndex((attached) => attached.filename === meta.filename && attached.size === meta.size)
+            : -1;
+        if (index === -1) {
+            missing.push(id);
+            continue;
+        }
+        const [copy] = unclaimed.splice(index, 1);
+        if (copy) copied[id] = copy.id;
+    }
+    return { missing, copied };
 }
 
 export interface AttemptStatus {
@@ -297,9 +345,11 @@ export const submissionTools: ToolDef[] = [
             const file = hasUploadSource(args) ? await readUploadSource(args, uploadRoots ?? []) : undefined;
             const before = await preflightSubmission(canvas, base, "online_upload", file ? [file.name] : []);
             const fileIds: string[] = [...(args.file_ids ?? [])];
+            const knownFiles = new Map<string, { filename?: string; size?: number }>();
             if (file) {
                 const uploaded = await canvas.uploadFile(`${base}/submissions/self/files`, file);
                 fileIds.push(uploaded.id);
+                knownFiles.set(uploaded.id, uploaded);
             }
 
             let submission = await canvas.post<Record<string, unknown>>(`${base}/submissions`, {
@@ -311,18 +361,21 @@ export const submissionTools: ToolDef[] = [
                 submission = await canvas.get<Record<string, unknown>>(`${base}/submissions/self`);
             }
             const summary = { ...summariseSubmission(submission), previous_attempt: before.used };
-            const attachedIds = new Set(summary.attachments.map((attached) => attached.id));
-            const missing = fileIds.filter((id) => !attachedIds.has(id));
+            const { missing, copied } = await matchAttachments(canvas, fileIds, summary.attachments, knownFiles);
+            const copiedNote = Object.keys(copied).length > 0
+                ? { copied_file_ids: copied, copied_note: "Canvas attached a copy of these files under new ids, as it does for files already used in a submission." }
+                : {};
             if (missing.length > 0) {
                 return {
                     ...jsonResult({
                         error: `Canvas accepted the submission but file(s) ${missing.join(", ")} are not attached to it. Check the submission in Canvas.`,
                         submission: summary,
+                        ...copiedNote,
                     }),
                     isError: true,
                 };
             }
-            return jsonResult(summary);
+            return jsonResult({ ...summary, ...copiedNote });
         },
     },
     {
